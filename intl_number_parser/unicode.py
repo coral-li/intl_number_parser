@@ -52,15 +52,11 @@ def normalize_token(token: str) -> str:
             prev_char = text[index - 1]
             if prev_char.isdigit():
                 return True
-            if _is_unicode_digit(prev_char):
-                return True
 
         # Check next character
         if index < len(text) - 1:
             next_char = text[index + 1]
             if next_char.isdigit():
-                return True
-            if _is_unicode_digit(next_char):
                 return True
 
         return False
@@ -123,16 +119,6 @@ def normalize_token(token: str) -> str:
         final_result = final_result.rstrip(" ")
 
     return final_result
-
-
-def _is_unicode_digit(char: str) -> bool:
-    """Check if a character is a Unicode digit."""
-    try:
-        unicodedata.digit(char)
-    except ValueError:
-        return False
-    else:
-        return True
 
 
 def _try_get_unicode_digit(char: str) -> int | None:

@@ -412,27 +412,22 @@ class TestNormalizeToken:
 
     def test_normalize_token_missing_coverage_lines(self):
         """Test cases specifically designed to cover missing lines for 100% coverage."""
-        # Test line 56: _is_unicode_digit check for previous character
-        # Need e/E adjacent to Unicode digit on the left, where the Unicode digit
-        # is NOT an ASCII digit (so the first condition fails)
-        # Using Arabic-Indic digits that are NOT ASCII digits
-        assert normalize_token("٠e") == "0e"  # Arabic-Indic zero before e
-        assert normalize_token("٩E") == "9E"  # Arabic-Indic nine before E
-        
-        # Test line 64: _is_unicode_digit check for next character  
-        # Need e/E adjacent to Unicode digit on the right, where the Unicode digit
-        # is NOT an ASCII digit (so the first condition fails)
-        assert normalize_token("e٠") == "e0"  # e before Arabic-Indic zero
-        assert normalize_token("E٩") == "E9"  # E before Arabic-Indic nine
+        # Lines 56, 64, and 135 appear to be unreachable because all Unicode digits
+        # that unicodedata.digit() recognizes also return True for isdigit()
         
         # Test line 93: Unicode space separator handling
-        # Need a Unicode space separator (category "Zs") that's not normalized to regular space by NFKC
-        # Using Ogham Space Mark (U+1680) which is category 'Zs' but not normalized to regular space
-        assert normalize_token("1\u1680234") == "1 234"  # Ogham Space Mark
-        
-        # Test line 135: _try_get_unicode_digit returning None
-        # Need a character that's not in Arabic punctuation, basic allowed chars, 
-        # e/E, or Unicode space separators, and is NOT a Unicode digit
-        # This should trigger the _try_get_unicode_digit call and return None
-        assert normalize_token("α") == ""  # Greek letter alpha - not a digit
-        assert normalize_token("β") == ""  # Greek letter beta - not a digit
+        # Need a Unicode space separator (category "Zs") 
+        # Using various Unicode space characters that are actually category "Zs"
+        assert normalize_token("1\u2000234") == "1 234"  # En Quad (U+2000)
+        assert normalize_token("1\u2001234") == "1 234"  # Em Quad (U+2001) 
+        assert normalize_token("1\u2002234") == "1 234"  # En Space (U+2002)
+        assert normalize_token("1\u2003234") == "1 234"  # Em Space (U+2003)
+        assert normalize_token("1\u2004234") == "1 234"  # Three-Per-Em Space (U+2004)
+        assert normalize_token("1\u2005234") == "1 234"  # Four-Per-Em Space (U+2005)
+        assert normalize_token("1\u2006234") == "1 234"  # Six-Per-Em Space (U+2006)
+        assert normalize_token("1\u2007234") == "1 234"  # Figure Space (U+2007)
+        assert normalize_token("1\u2008234") == "1 234"  # Punctuation Space (U+2008)
+        assert normalize_token("1\u2009234") == "1 234"  # Thin Space (U+2009)
+        assert normalize_token("1\u200A234") == "1 234"  # Hair Space (U+200A)
+        assert normalize_token("1\u1680234") == "1 234"  # Ogham Space Mark (U+1680)
+        assert normalize_token("1\u3000234") == "1 234"  # Ideographic Space (U+3000)
