@@ -1,0 +1,66 @@
+---
+alwaysApply: true
+description: "Test-Driven Development (TDD) practices for all code changes"
+---
+
+# Test-Driven Development (TDD) Rule
+
+## Core TDD Principle
+**Always follow the Red-Green-Refactor cycle:**
+
+1. **Red**: Write a failing test first
+2. **Green**: Write the minimal code to make the test pass
+3. **Refactor**: Improve the code while keeping tests passing
+
+## Implementation Guidelines
+
+### Before Writing Any Code
+- **Always write tests first** before implementing functionality
+- Start with the simplest test case that demonstrates the desired behavior
+- Ensure the test fails initially (Red phase)
+- Write descriptive test names that clearly explain what is being tested
+
+### Test Structure
+- Use descriptive test function names: `test_should_do_something_when_condition()`
+- Follow the Arrange-Act-Assert pattern:
+  - **Arrange**: Set up test data and conditions
+  - **Act**: Execute the function/method being tested
+  - **Assert**: Verify the expected outcome
+- Include edge cases and error conditions in tests
+
+### Code Implementation
+- Write only the minimum code necessary to make the current test pass
+- Avoid over-engineering or implementing features not covered by tests
+- Keep functions small and focused on a single responsibility
+
+### Refactoring
+- Refactor code while maintaining 100% test coverage
+- Improve code clarity, performance, and maintainability
+- Ensure all tests continue to pass after refactoring
+
+### Test Coverage Requirements
+- Aim for 100% branch coverage as specified in project requirements
+- Test both happy path and error scenarios
+- Include boundary value testing
+- Test invalid inputs and error handling
+
+### File Organization
+- Keep tests in the `tests/` directory
+- Mirror the source code structure in test files
+- Name test files with `test_` prefix (e.g., `test_unicode.py` for `unicode.py`)
+
+## Example TDD Workflow
+1. Write a failing test in `tests/test_module.py`
+2. Run tests to confirm failure
+3. Implement minimal code in `intl_number_parser/module.py`
+4. Run tests to confirm they pass
+5. Refactor if needed while keeping tests green
+6. Repeat for next feature
+
+## Quality Assurance
+- All tests must pass before considering a feature complete
+- Use meaningful assertions with clear error messages
+- Test in isolation - each test should be independent
+- Mock external dependencies when necessary
+
+**Remember: No production code should be written without a corresponding test!**
