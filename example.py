@@ -13,8 +13,7 @@ import time
 
 import pandas as pd
 
-from intl_number_parser.detector import LocaleDetector
-from intl_number_parser.pandas_adapter import parse_series
+from intl_number_parser import LocaleDetector, parse_series
 
 
 def demo_basic_parsing() -> None:
