@@ -38,31 +38,31 @@ dev = [
     "ruff>=0.12.0",
     "mypy>=1.10.0",
     "pre-commit>=3.0.0",
-    
+
     # Testing
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "pytest-xdist>=3.0.0",  # Parallel test execution
     "coverage[toml]>=7.0.0",
-    
+
     # Type stubs
     "types-requests",
     "pandas-stubs",
-    
+
     # Documentation
     "sphinx>=5.0.0",
     "sphinx-rtd-theme>=1.0.0",
     "myst-parser>=0.18.0",
-    
+
     # Build and packaging
     "build>=0.10.0",
     "twine>=4.0.0",
     "wheel>=0.40.0",
-    
+
     # Security scanning
     "bandit>=1.7.0",
     "safety>=2.0.0",
-    
+
     # Performance profiling
     "memray>=1.7.0",
     "py-spy>=0.3.0",
@@ -162,7 +162,9 @@ select = [
 # Ignore specific rules that might conflict with project needs
 ignore = [
     "D203",    # 1 blank line required before class docstring (conflicts with D211)
+    "D212",    # Multi-line docstring summary should start at the first line
     "D213",    # Multi-line docstring summary should start at the second line (conflicts with D212)
+    "D415",    # First line should end with a period, question mark, or exclamation point
 
     "COM812",  # Trailing comma missing (conflicts with formatter)
     "ISC001",  # Implicitly concatenated string literals (conflicts with formatter)
@@ -170,6 +172,9 @@ ignore = [
     "Q001",    # Single quote docstring found but double quotes preferred (handled by formatter)
     "Q002",    # Docstring contains escape sequence (handled by formatter)
     "Q003",    # Change outer quotes to avoid escaping inner quotes (handled by formatter)
+
+    "PD901",   # pandas-vet: df is a bad variable name (too restrictive for this project)
+    "RUF001",  # String contains ambiguous Unicode character (intentional)
 ]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided
@@ -314,4 +319,4 @@ precision = 2
 directory = "htmlcov"
 
 [tool.coverage.xml]
-output = "coverage.xml" 
+output = "coverage.xml"
