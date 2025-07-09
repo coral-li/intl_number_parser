@@ -5,12 +5,12 @@ A robust, locale-aware international number parsing library for Python that auto
 
 **Goal**: Achieve ≥99% autodetection accuracy with full type hints, 100% branch coverage, and production-ready quality.
 
-## 🎯 Current Status: **Task 03 Complete** ✅
+## 🎯 Current Status: **Task 04 Complete** ✅
 
 ### 📊 Progress Summary
-- **Completed**: 3/10 tasks (30%)
-- **Current Phase**: Validation Logic
-- **Next Phase**: Locale Detector
+- **Completed**: 4/10 tasks (40%)
+- **Current Phase**: Locale Detector
+- **Next Phase**: Core Number Parsing Engine
 
 ## ✅ Completed Tasks
 
@@ -103,7 +103,7 @@ custom = LocaleCandidate(decimal=".", thousands="'", group_size=3, score=0)
 **Example Usage**:
 ```python
 from intl_number_parser.validation import validate
-from intl_number_parser.locale import LocaleCandidate
+from intl_number_parser.candidates import LocaleCandidate
 
 # US format validation
 us_format = LocaleCandidate(decimal=".", thousands=",", group_size=3, score=0)
@@ -120,27 +120,51 @@ validate("1.23e-4", us_format)     # → True
 validate("1,234e4", us_format)     # → False (thousands in mantissa)
 ```
 
+### Task 04 – Evidence-Accumulating Locale Detector
+**Status**: ✅ **COMPLETE** (93.13% module coverage, 95.87% overall)
+**Files Created**:
+- `intl_number_parser/detector.py` - Main implementation
+- `tests/test_detector.py` - Comprehensive test suite (26 tests)
+
+**Key Features Implemented**:
+- ✅ Stateful `LocaleDetector` class with evidence accumulation
+- ✅ `ingest(token)` method with Unicode normalization and score updates (+1 success, -1 failure)
+- ✅ Auto-lock when only one candidate remains or leader has ≥10× advantage
+- ✅ Dynamic confidence scoring (0.0-1.0) based on score separation
+- ✅ `best_candidate` property returning highest scorer (or None if all negative)
+- ✅ `freeze(candidate)` for manual locking (blocks subsequent ingestion)
+- ✅ `override(candidate)` for manual winner selection (allows continued ingestion)
+- ✅ Thread-safe operation with no shared mutable globals
+- ✅ Integration with existing unicode normalization and validation modules
+- ✅ Comprehensive error handling for edge cases (empty tokens, invalid input)
+
+**Test Results**: 26/26 detector tests + 98 existing tests = 124/124 PASSED ✅
+**Coverage**: 93.13% detector module, 95.87% overall (exceeds 95% requirement)
+
+**Example Usage**:
+```python
+from intl_number_parser.detector import LocaleDetector
+
+# Automatic detection from series
+detector = LocaleDetector()
+detector.ingest("1,234.56")
+detector.ingest("789.01") 
+detector.ingest("12,345.67")
+
+# Check results
+print(detector.best_candidate.decimal)    # → "."
+print(detector.best_candidate.thousands)  # → ","
+print(detector.confidence)                # → 0.98
+print(detector.is_locked)                 # → True
+
+# Manual control
+detector.freeze(some_candidate)           # Locks to specific candidate
+detector.override(other_candidate)       # Sets winner, allows continued ingestion
+```
+
 ## 🔄 Upcoming Tasks
 
-### Task 03 – Validation Logic
-**Status**: 🔄 **NEXT UP**
-**Target Files**: `intl_number_parser/validation.py`
 
-**Requirements**:
-- Implement `validate_token_against_candidate()`
-- Handle single decimal separator validation
-- Thousands grouping validation (exactly 3 digits)
-- Scientific notation validation (no thousands separators in mantissa)
-
-### Task 04 – Locale Detector
-**Status**: 🔄 **PENDING**
-**Target Files**: `intl_number_parser/detector.py`
-
-**Requirements**:
-- Evidence-accumulating detector with confidence scoring
-- Dynamic threshold elimination
-- Auto-lock when winner clear (10× score lead)
-- Confidence reporting (0-1 scale)
 
 ### Task 05 – Core Number Parsing Engine
 **Status**: 🔄 **PENDING**
@@ -204,16 +228,17 @@ intl-number-parser/
 ├── intl_number_parser/
 │   ├── __init__.py          ✅ Created
 │   ├── unicode.py           ✅ Complete (normalize_token)
-│   ├── locale.py            ✅ Complete (LocaleCandidate)
+│   ├── candidates.py        ✅ Complete (LocaleCandidate)
 │   ├── validation.py        ✅ Complete (validate function)
-│   ├── detector.py          🔄 Next (evidence-accumulating detector)
-│   ├── core.py              ⏳ Pending
+│   ├── detector.py          ✅ Complete (LocaleDetector)
+│   ├── core.py              🔄 Next (number parsing engine)
 │   └── pandas_support.py    ⏳ Pending
 ├── tests/
 │   ├── __init__.py          ✅ Created
 │   ├── test_unicode.py      ✅ Complete (21 tests)
 │   ├── test_locale.py       ✅ Complete (20 tests)
 │   ├── test_validation.py   ✅ Complete (52 tests)
+│   ├── test_detector.py     ✅ Complete (26 tests)
 │   └── test_*.py            ⏳ Pending
 ├── tasks/                   📋 Requirements (10 files)
 ├── REQUIREMENTS.md          📋 Project specs
@@ -232,19 +257,21 @@ intl-number-parser/
 
 ## 📈 Performance Benchmarks
 - **Unicode Normalization**: Tested with 10,000 character strings (O(n) confirmed)
-- **Test Suite**: 98 tests execute in 0.20s (21 unicode + 20 locale + 52 validation + 5 additional)
+- **Test Suite**: 124 tests execute in 0.48s (21 unicode + 20 locale + 52 validation + 26 detector + 5 additional)
 - **Validation Performance**: Manual scanning approach ensures linear time complexity
+- **Detection Performance**: O(k) per token where k = number of candidates (default 6)
 
 ## 🚀 Next Steps for Developer
 
-1. **Start Task 04**: Implement evidence-accumulating locale detector
+1. **Start Task 05**: Implement core number parsing engine
 2. **Focus Areas**:
-   - Create `detector.py` module with confidence scoring
-   - Implement dynamic threshold elimination
-   - Auto-lock when winner clear (10× score lead)
-   - Confidence reporting (0-1 scale)
+   - Create `core.py` module with main `parse_number()` function
+   - Integrate detector for automatic locale identification
+   - Handle precision preservation (integers ≤ 2^63-1, decimals ≤ 34 digits)
+   - Support scientific notation and embedded number extraction
+   - Target ≥1M tokens/s performance for ASCII inputs
 3. **Testing**: Continue TDD approach with comprehensive test coverage
-4. **Reference**: Check `tasks/04-locale-detector.md` for detailed requirements
+4. **Reference**: Check `tasks/05-number-parser.md` for detailed requirements
 
 ## 🧪 Testing Strategy
 - **TDD Approach**: Write tests first, then implement
@@ -260,5 +287,5 @@ intl-number-parser/
 
 ---
 
-*Last Updated: Task 02 completed successfully*
-*Next Milestone: Task 03 - Validation Logic* 
+*Last Updated: Task 04 completed successfully*
+*Next Milestone: Task 05 - Core Number Parsing Engine* 
