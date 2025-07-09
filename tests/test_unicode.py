@@ -50,8 +50,8 @@ class TestNormalizeToken:
     def test_normalize_token_unicode_space_separators(self):
         """Test Unicode space separator normalization."""
         # Non-breaking space (U+00A0)
-        assert normalize_token("1\u00A0234") == "1 234"
-        assert normalize_token("1\u00A0234,56") == "1 234,56"
+        assert normalize_token("1\u00a0234") == "1 234"
+        assert normalize_token("1\u00a0234,56") == "1 234,56"
 
         # Thin space (U+2009)
         assert normalize_token("1\u2009234") == "1 234"
@@ -151,13 +151,13 @@ class TestNormalizeToken:
     def test_normalize_token_whitespace_only(self):
         """Test various whitespace characters."""
         assert normalize_token("   ") == "   "
-        assert normalize_token("\u00A0\u00A0") == "  "
+        assert normalize_token("\u00a0\u00a0") == "  "
         assert normalize_token("\u2009\u2008") == "  "
 
     def test_normalize_token_complex_examples(self):
         """Test complex real-world examples."""
         # European number with non-breaking space
-        assert normalize_token("1\u00A0234\u00A0567,89") == "1 234 567,89"
+        assert normalize_token("1\u00a0234\u00a0567,89") == "1 234 567,89"
 
         # Mixed Arabic-Indic with punctuation
         assert normalize_token("١٬٢٣٤٫٥٦٧") == "1234.567"
@@ -414,12 +414,12 @@ class TestNormalizeToken:
         """Test cases specifically designed to cover missing lines for 100% coverage."""
         # Lines 56, 64, and 135 appear to be unreachable because all Unicode digits
         # that unicodedata.digit() recognizes also return True for isdigit()
-        
+
         # Test line 93: Unicode space separator handling
-        # Need a Unicode space separator (category "Zs") 
+        # Need a Unicode space separator (category "Zs")
         # Using various Unicode space characters that are actually category "Zs"
         assert normalize_token("1\u2000234") == "1 234"  # En Quad (U+2000)
-        assert normalize_token("1\u2001234") == "1 234"  # Em Quad (U+2001) 
+        assert normalize_token("1\u2001234") == "1 234"  # Em Quad (U+2001)
         assert normalize_token("1\u2002234") == "1 234"  # En Space (U+2002)
         assert normalize_token("1\u2003234") == "1 234"  # Em Space (U+2003)
         assert normalize_token("1\u2004234") == "1 234"  # Three-Per-Em Space (U+2004)
@@ -428,6 +428,6 @@ class TestNormalizeToken:
         assert normalize_token("1\u2007234") == "1 234"  # Figure Space (U+2007)
         assert normalize_token("1\u2008234") == "1 234"  # Punctuation Space (U+2008)
         assert normalize_token("1\u2009234") == "1 234"  # Thin Space (U+2009)
-        assert normalize_token("1\u200A234") == "1 234"  # Hair Space (U+200A)
+        assert normalize_token("1\u200a234") == "1 234"  # Hair Space (U+200A)
         assert normalize_token("1\u1680234") == "1 234"  # Ogham Space Mark (U+1680)
         assert normalize_token("1\u3000234") == "1 234"  # Ideographic Space (U+3000)

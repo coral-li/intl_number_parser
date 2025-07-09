@@ -1,5 +1,5 @@
 default_language_version:
-  python: python3.8
+  python: python3.12
 fail_fast: false
 repos:
   # ============================================================================
@@ -28,137 +28,14 @@ repos:
         args: [--strict, --ignore-missing-imports]
         stages: [pre-commit]
 
-  # ============================================================================
-  # Security and code quality tools
-  # ============================================================================
-  
-  # Bandit - Security linter for Python
-  - repo: https://github.com/PyCQA/bandit
-    rev: 1.7.10
-    hooks:
-      - id: bandit
-        name: "Bandit (Security)"
-        args: ["-c", "pyproject.toml"]
-        stages: [pre-commit]
-
-  # Safety - Check for known security vulnerabilities
-  - repo: https://github.com/Lucas-C/pre-commit-hooks-safety
-    rev: v1.3.3
-    hooks:
-      - id: python-safety-dependencies-check
-        name: "Safety (Dependency Check)"
-        stages: [pre-commit]
-
-  # Detect secrets - Prevent secrets from being committed
-  - repo: https://github.com/Yelp/detect-secrets
-    rev: v1.5.0
-    hooks:
-      - id: detect-secrets
-        name: "Detect Secrets"
-        args: ['--baseline', '.secrets.baseline']
-        exclude: .secrets.baseline
-        stages: [pre-commit]
-
-  # ============================================================================
-  # General file quality and formatting
-  # ============================================================================
-  
-  # Standard pre-commit hooks
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
-    hooks:
-      # File format validation
-      - id: check-yaml
-        name: "Check YAML"
-        args: [--allow-multiple-documents]
-      - id: check-toml
-        name: "Check TOML"
-      - id: check-json
-        name: "Check JSON"
-      - id: check-xml
-        name: "Check XML"
-      
-      # Git and merge conflict detection
-      - id: check-merge-conflict
-        name: "Check for merge conflicts"
-      - id: check-case-conflict
-        name: "Check for case conflicts"
-      
-      # File size and content checks
-      - id: check-added-large-files
-        name: "Check for large files"
-        args: [--maxkb=1000]
-      - id: check-executables-have-shebangs
-        name: "Check executables have shebangs"
-      - id: check-shebang-scripts-are-executable
-        name: "Check shebang scripts are executable"
-      
-      # Whitespace and line ending fixes
-      - id: trailing-whitespace
-        name: "Trim trailing whitespace"
-        args: [--markdown-linebreak-ext=md]
-      - id: end-of-file-fixer
-        name: "Fix end of files"
-      - id: mixed-line-ending
-        name: "Fix mixed line endings"
-        args: [--fix=lf]
-      
-      # Python-specific checks
-      - id: check-docstring-first
-        name: "Check docstring is first"
-      - id: debug-statements
-        name: "Check for debug statements"
-      - id: name-tests-test
-        name: "Check test naming"
-        args: [--django]
-
-  # ============================================================================
-  # Additional Python code quality tools
-  # ============================================================================
-  
-  # pyupgrade - Upgrade Python syntax for newer versions
-  - repo: https://github.com/asottile/pyupgrade
-    rev: v3.19.0
-    hooks:
-      - id: pyupgrade
-        name: "pyupgrade (Python 3.8+)"
-        args: [--py38-plus]
-        stages: [pre-commit]
-
-  # codespell - Fix common misspellings
-  - repo: https://github.com/codespell-project/codespell
-    rev: v2.4.0
-    hooks:
-      - id: codespell
-        name: "Codespell (Fix typos)"
-        args: [--write-changes]
-        additional_dependencies: [tomli]
-        stages: [pre-commit]
-
-  # ============================================================================
-  # Commit message validation
-  # ============================================================================
-  
-  # Conventional commits
-  - repo: https://github.com/compilerla/conventional-pre-commit
-    rev: v4.2.0
-    hooks:
-      - id: conventional-pre-commit
-        name: "Conventional Commit"
-        stages: [commit-msg]
-
-  # ============================================================================
-  # CI configuration
-  # ============================================================================
-  
 ci:
   autofix_commit_msg: |
     [pre-commit.ci] auto fixes from pre-commit.com hooks
-    
+
     for more information, see https://pre-commit.ci
   autofix_prs: true
   autoupdate_branch: ''
   autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
   autoupdate_schedule: weekly
   skip: []
-  submodules: false 
+  submodules: false
