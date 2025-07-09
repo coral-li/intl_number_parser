@@ -27,12 +27,15 @@ classifiers = [
     "Topic :: Text Processing :: Linguistic",
 ]
 dependencies = [
-    "pandas>=1.5.0",
-    "numpy>=1.21.0",
-    "unicodedata2>=15.0.0",
+    # Core functionality requires no external dependencies
 ]
 
 [project.optional-dependencies]
+# Pandas integration for Series processing
+pandas = [
+    "pandas>=1.5.0",
+]
+
 dev = [
     # Core development tools
     "ruff>=0.12.0",
@@ -44,6 +47,9 @@ dev = [
     "pytest-cov>=4.0.0",
     "pytest-xdist>=3.0.0",  # Parallel test execution
     "coverage[toml]>=7.0.0",
+
+    # Pandas integration (needed for testing and development)
+    "pandas>=1.5.0",
 
     # Type stubs
     "types-requests",
@@ -206,6 +212,10 @@ unfixable = []
 "intl_number_parser/unicode.py" = [
     "RUF001",  # String contains ambiguous Unicode character (intentional)
     "RUF002",  # Docstring contains ambiguous Unicode character (intentional)
+]
+# Pandas adapter has special import handling for optional dependency
+"intl_number_parser/pandas_adapter.py" = [
+    "TC004",   # Move import out of type-checking block (intentional for optional dependency)
 ]
 
 # Specific rule configurations

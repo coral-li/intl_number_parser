@@ -20,10 +20,77 @@ A robust, locale-aware international number parsing library for Python that auto
 
 ## 🚀 Quick Start
 
-### Installation
+### Why Choose intl-number-parser?
+
+While Python has several number parsing solutions, `intl-number-parser` stands out with unique advantages:
+
+### vs. Built-in `locale` Module
+- **Manual Configuration**: The `locale` module requires you to know and set the exact locale beforehand (`locale.setlocale(locale.LC_ALL, 'de_DE.UTF-8')`)
+- **System Dependencies**: Requires system locale packages to be installed
+- **No Format Detection**: Cannot automatically detect the format from data
+- **Thread Safety Issues**: `locale.setlocale()` is not thread-safe and affects global state
+
+```python
+# locale module - requires manual setup
+import locale
+locale.setlocale(locale.LC_ALL, 'de_DE.UTF-8')  # Must know format beforehand
+result = locale.atof('1.234,56')  # Only works with exact locale
+```
+
+### vs. Babel Library
+- **Limited Parsing**: Babel excels at formatting but has limited parsing capabilities
+- **No Automatic Detection**: Requires manual locale specification
+- **Complex Setup**: Heavier dependency with more complexity than needed for number parsing
+
+```python
+# Babel - limited parsing, manual locale specification
+from babel.numbers import parse_decimal
+result = parse_decimal('1.234,56', locale='de_DE')  # Must specify locale
+```
+
+### vs. Other Libraries
+- **Limited Scope**: Libraries like `decimify`, `numparser`, `finparse` handle specific use cases but lack comprehensive international format support
+- **No Automatic Learning**: Most require manual format specification or handle only basic cases
+- **Poor Unicode Support**: Limited or no support for international digit systems (Arabic-Indic, Devanagari, etc.)
+
+### intl-number-parser Advantages
+✅ **Automatic Format Detection** - No manual locale configuration needed
+✅ **Thread-Safe** - No global state modifications
+✅ **Comprehensive Unicode Support** - Handles 9+ digit systems automatically
+✅ **Pandas Integration** - Optimized for data science workflows
+✅ **High Performance** - Efficient sampling and caching for large datasets
+✅ **Format Learning** - Automatically learns from your data patterns
+✅ **Minimal Dependencies** - Core functionality uses only Python stdlib; pandas optional for Series processing
+
+```python
+# intl-number-parser - automatic detection, no configuration needed
+from intl_number_parser import parse_number
+result = parse_number("1.234,56")  # Automatically detects European format
+result = parse_number("1,234.56")  # Automatically detects US format
+result = parse_number("٤٬٥٦٧٫٨٩")  # Automatically handles Arabic-Indic digits
+```
+
+## Dependencies
+
+- **Core functionality**: Python 3.8+ standard library only
+- **Pandas integration**: pandas>=1.5.0 (optional, for `parse_series` functionality)
 
 ```bash
+# Install core functionality only
 pip install intl-number-parser
+
+# Install with pandas integration
+pip install intl-number-parser[pandas]
+```
+
+## Installation
+
+```bash
+# Install core functionality only
+pip install intl-number-parser
+
+# Install with pandas integration
+pip install intl-number-parser[pandas]
 ```
 
 ### Basic Usage
@@ -34,7 +101,7 @@ from intl_number_parser import parse_number
 # US/UK format
 parse_number("1,234.56")           # → '1234.56'
 
-# European format  
+# European format
 parse_number("1.234,56")           # → '1234.56'
 
 # Swiss format
@@ -56,89 +123,215 @@ parse_number("Total: €1.234,56")   # → '1234.56'
 
 ### Pandas Integration
 
+**Note:** The `parse_series` function is only available when pandas is installed. Install with `pip install intl-number-parser[pandas]` to use this functionality.
+
 ```python
 import pandas as pd
 from intl_number_parser import parse_series
 
-# Parse a Series of international numbers
-data = pd.Series([
-    "1,234.56",    # US format
-    "1.234,56",    # European format  
-    "1 234,56",    # French format
-    "1'234.56",    # Swiss format
-    "$1,000.00",   # With currency
-    "Invalid"      # Becomes NaN
+# Real-world example: European financial data
+# The system automatically learns the format from the data
+financial_data = pd.Series([
+    "1.234.567,89",    # European format: €1,234,567.89
+    "987.654,32",      # European format: €987,654.32
+    "45.678,90",       # European format: €45,678.90
+    "2.500,00",        # European format: €2,500.00
+    "156.789,45",      # European format: €156,789.45
+    "12.345,67",       # European format: €12,345.67
+    "789.012,34",      # European format: €789,012.34
+    "Invalid entry",   # Becomes NaN
+    "3.456,78"         # European format: €3,456.78
 ])
 
-result = parse_series(data)
+# Parse with automatic format detection
+# The system learns: periods = thousands, comma = decimal
+result = parse_series(financial_data)
 print(result)
-# 0    1234.56
-# 1    1234.56  
-# 2    1234.56
-# 3    1234.56
-# 4    1000.00
-# 5        NaN
+# 0    1234567.89
+# 1     987654.32
+# 2      45678.90
+# 3       2500.00
+# 4     156789.45
+# 5      12345.67
+# 6     789012.34
+# 7           NaN
+# 8       3456.78
 # dtype: float64
+
+# For large datasets, the system uses intelligent sampling
+# It trains on the first 20 values, last 10, and every 10th in between
+large_sales_data = pd.Series([
+    f"{i * 1000 + j:,}.{j:02d}"  # US format: 1,000.00, 2,001.01, etc.
+    for i in range(1, 501)  # 500 values
+    for j in range(2)       # 1000 total values
+])
+
+# Automatically detects US format and processes 1000 values in <0.5s
+result = parse_series(large_sales_data)
+print(f"Processed {len(result)} values with {result.isna().sum()} errors")
+# Processed 1000 values with 0 errors
 ```
 
 ## 📖 Detailed Usage
 
 ### Supported Number Formats
 
-The library automatically detects and handles these international formats:
+The library automatically detects and handles a comprehensive range of international number formats:
 
-| Format | Example | Description |
-|--------|---------|-------------|
-| **US/UK** | `1,234.56` | Comma thousands, period decimal |
-| **European** | `1.234,56` | Period thousands, comma decimal |
-| **French/German** | `1 234,56` | Space thousands, comma decimal |
-| **International** | `1 234.56` | Space thousands, period decimal |
-| **Swiss** | `1'234.56` | Apostrophe thousands, period decimal |
-| **Mixed Space** | `1 234 567,89` | Space thousands, comma decimal |
+#### Core Regional Formats
+
+| Format | Example | Description | Regions |
+|--------|---------|-------------|---------|
+| **US/UK** | `1,234.56` | Comma thousands, period decimal | United States, United Kingdom, Canada, Australia |
+| **European** | `1.234,56` | Period thousands, comma decimal | Germany, Austria, Netherlands, Belgium |
+| **French/German** | `1 234,56` | Space thousands, comma decimal | France, Germany, Nordic countries |
+| **International** | `1 234.56` | Space thousands, period decimal | Switzerland, Canada (French), International |
+| **Swiss** | `1'234.56` | Apostrophe thousands, period decimal | Switzerland |
+| **Mixed Space** | `1 234 567,89` | Space thousands, comma decimal | Extended French format |
+
+#### Unicode Digit Systems
+
+The library supports all Unicode digit blocks, automatically converting them to ASCII:
+
+| Script | Digits | Example Input | Parsed Output |
+|--------|---------|---------------|---------------|
+| **Arabic-Indic** | `٠١٢٣٤٥٦٧٨٩` | `٤٬٥٦٧٫٨٩` | `4567.89` |
+| **Devanagari** | `०१२३४५६७८९` | `१,२३४.५६` | `1234.56` |
+| **Bengali** | `০১২৩৪৫৬৭৮৯` | `১,২৩৪.৫৬` | `1234.56` |
+| **Thai** | `๐๑๒๓๔๕๖๗๘๙` | `๑,๒๓๔.๕๖` | `1234.56` |
+| **Khmer** | `០១២៣៤៥៦៧៨៩` | `១,២៣៤.៥៦` | `1234.56` |
+| **Tibetan** | `༠༡༢༣༤༥༦༧༨༩` | `༡,༢༣༤.༥༦` | `1234.56` |
+| **Mongolian** | `᠐᠑᠒᠓᠔᠕᠖᠗᠘᠙` | `᠑,᠒᠓᠔.᠕᠖` | `1234.56` |
+| **Myanmar** | `၀၁၂၃၄၅၆၇၈၉` | `၁,၂၃၄.၅၆` | `1234.56` |
+| **Mathematical Bold** | `𝟎𝟏𝟐𝟑𝟒𝟓𝟔𝟕𝟖𝟗` | `𝟏,𝟐𝟑𝟒.𝟓𝟔` | `1234.56` |
+
+#### Special Number Types
+
+| Type | Examples | Description |
+|------|----------|-------------|
+| **Integers** | `42`, `1,000`, `١٢٣` | Whole numbers in any format |
+| **Decimals** | `1.23`, `1,23`, `۱.۲۳` | Fractional numbers |
+| **Large Numbers** | `1,234,567,890.12` | Multi-group thousands |
+| **Small Decimals** | `.123`, `,45`, `٫٨٩` | Leading decimal point |
+| **Scientific Notation** | `1.23e4`, `1,23E-4`, `۱.۲۳e+۵` | Exponential format |
+| **Negative Numbers** | `-1,234.56`, `−٤٥٦.٧٨` | Signed numbers |
+| **Positive Explicit** | `+1,234.56`, `+۱۲۳.۴۵` | Explicit positive sign |
+
+#### Advanced Features
+
+| Feature | Examples | Description |
+|---------|----------|-------------|
+| **Embedded Numbers** | `Price: $1,234.56`, `Total: €1.234,56` | Extract numbers from text |
+| **Mixed Scripts** | `١٢٣4.56`, `1২৩৪.৫৬` | Unicode + ASCII digits |
+| **Unicode Punctuation** | `٤٬٥٦٧٫٨٩` | Arabic decimal `٫` and thousands `٬` |
+| **Unicode Spaces** | `1 234,56` | Non-breaking spaces (NBSP) |
+| **Flexible Grouping** | `1,234,567`, `12,34,567` | Various grouping patterns |
+| **No Grouping** | `1234.56`, `۱۲۳۴.۵۶` | Numbers without separators |
+
+#### Format Detection Examples
+
+```python
+from intl_number_parser import parse_number
+
+# Regional formats
+parse_number("1,234.56")          # US/UK → '1234.56'
+parse_number("1.234,56")          # European → '1234.56'
+parse_number("1 234,56")          # French → '1234.56'
+parse_number("1'234.56")          # Swiss → '1234.56'
+
+# Unicode digits
+parse_number("٤٬٥٦٧٫٨٩")         # Arabic-Indic → '4567.89'
+parse_number("१,२३४.५६")          # Devanagari → '1234.56'
+parse_number("๑,๒๓๔.๕๖")          # Thai → '1234.56'
+
+# Scientific notation
+parse_number("1.23e4")            # → '12300.0'
+parse_number("1,23E-4")           # European → '1.23e-4'
+parse_number("۱.۲۳e+۵")           # Persian → '123000.0'
+
+# Embedded in text
+parse_number("Price: $1,234.56")  # → '1234.56'
+parse_number("Total: ٤٬٥٦٧٫٨٩")  # → '4567.89'
+```
 
 ### Advanced Usage with Locale Detection
 
-For better performance when processing multiple numbers in the same format, use the `LocaleDetector`:
+The system automatically learns from your data patterns:
 
 ```python
 from intl_number_parser import parse_number, LocaleDetector
 
-# Create and train detector
+# Example 1: Processing accounting data (US format)
+accounting_data = ["1,234.56", "789.01", "12,345.67", "999.99", "1,111.11"]
+
+# Create detector and let it learn automatically
 detector = LocaleDetector()
+results = []
 
-# Feed it examples to learn the format
-detector.ingest("1,234.56")
-detector.ingest("789.01") 
-detector.ingest("12,345.67")
+for value in accounting_data:
+    # Each number teaches the detector about the format
+    parsed = parse_number(value, detector)
+    results.append(parsed)
+    print(f"Parsed: {value} → {parsed} (confidence: {detector.confidence:.1%})")
 
-# Now parsing is faster and more accurate
-result1 = parse_number("999.99", detector)    # → '999.99'
-result2 = parse_number("1,111.11", detector)  # → '1111.11'
+# Output shows increasing confidence:
+# Parsed: 1,234.56 → 1234.56 (confidence: 16.7%)
+# Parsed: 789.01 → 789.01 (confidence: 33.3%)
+# Parsed: 12,345.67 → 12345.67 (confidence: 50.0%)
+# Parsed: 999.99 → 999.99 (confidence: 66.7%)
+# Parsed: 1,111.11 → 1111.11 (confidence: 83.3%)
 
-# Check detection confidence
-print(f"Confidence: {detector.confidence:.2%}")  # → Confidence: 98%
-print(f"Detected format: {detector.best_candidate.decimal}")  # → .
+print(f"\nFinal format: {detector.best_candidate.thousands} (thousands), {detector.best_candidate.decimal} (decimal)")
+# Final format: , (thousands), . (decimal)
 ```
 
-### Pandas Integration with Detector
+### Automatic Learning with Confidence Tracking
 
-For large datasets, pre-training the detector improves performance:
+The system automatically learns from your data and shows increasing confidence:
 
 ```python
 import pandas as pd
 from intl_number_parser import parse_series, LocaleDetector
 
-# Large dataset in European format
-df = pd.DataFrame({
-    'amounts': ['1.234,56', '789,01', '12.345,67'] * 1000
-})
+# Real-world scenario: Processing bank statements in German format
+bank_statements = pd.Series([
+    "1.234.567,89",  # €1,234,567.89
+    "45.678,90",     # €45,678.90
+    "2.500,00",      # €2,500.00
+    "156.789,45",    # €156,789.45
+    "12.345,67",     # €12,345.67
+    "789.012,34",    # €789,012.34
+    "3.456,78"       # €3,456.78
+])
 
-# Pre-train detector for better performance
+# Method 1: Fully automatic (recommended for most cases)
+result = parse_series(bank_statements)
+print("Fully automatic parsing:", result.tolist())
+
+# Method 2: Monitor the learning process
 detector = LocaleDetector()
-detector.ingest('1.234,56')  # European format sample
+print("Learning progress:")
 
-# Fast vectorized parsing
-df['parsed'] = parse_series(df['amounts'], detector)
+# Simulate ingesting data and show confidence building
+for i, value in enumerate(bank_statements[:5]):
+    detector.ingest(value)
+    print(f"After {i+1} samples: {detector.confidence:.1%} confidence")
+    if detector.is_locked:
+        print(f"  → Locked! Detected format: {detector.best_candidate.thousands}/{detector.best_candidate.decimal}")
+        break
+
+# Use the trained detector for remaining data
+result = parse_series(bank_statements, detector)
+print(f"\nFinal result: {len(result)} values parsed successfully")
+
+# Output:
+# Learning progress:
+# After 1 samples: 16.7% confidence
+# After 2 samples: 33.3% confidence
+# After 3 samples: 50.0% confidence
+# After 4 samples: 66.7% confidence
+# After 5 samples: 83.3% confidence
+#   → Locked! Detected format: ./, (periods for thousands, comma for decimal)
 ```
 
 ### Unicode and International Characters
@@ -152,10 +345,47 @@ from intl_number_parser import parse_number
 parse_number("٤٬٥٦٧٫٨٩")         # → '4567.89'
 
 # Full-width Unicode digits (Japanese/Chinese)
-parse_number("１２３４．５６")      # → '1234.56'
+parse_number("١٢٣٤．٥٦")      # → '1234.56'
 
 # Mixed Unicode spaces and separators
 parse_number("1 234,56")          # → '1234.56' (NBSP preserved)
+```
+
+#### Pandas with Arabic Numbers
+
+```python
+import pandas as pd
+from intl_number_parser import parse_series
+
+# Real-world example: Arabic financial data with Arabic-Indic digits
+arabic_financial_data = pd.Series([
+    "١٬٢٣٤٬٥٦٧٫٨٩",    # ١,٢٣٤,٥٦٧.٨٩ (1,234,567.89)
+    "٩٨٧٬٦٥٤٫٣٢",      # ٩٨٧,٦٥٤.٣٢ (987,654.32)
+    "٤٥٬٦٧٨٫٩٠",       # ٤٥,٦٧٨.٩٠ (45,678.90)
+    "٢٬٥٠٠٫٠٠",        # ٢,٥٠٠.٠٠ (2,500.00)
+    "١٥٦٬٧٨٩٫٤٥",      # ١٥٦,٧٨٩.٤٥ (156,789.45)
+    "١٢٬٣٤٥٫٦٧",       # ١٢,٣٤٥.٦٧ (12,345.67)
+    "٧٨٩٬٠١٢٫٣٤",      # ٧٨٩,٠١٢.٣٤ (789,012.34)
+    "٣٬٤٥٦٫٧٨"         # ٣,٤٥٦.٧٨ (3,456.78)
+])
+
+# Automatic processing - system learns Arabic format automatically
+result = parse_series(arabic_financial_data)
+print("Arabic numbers parsed:", result.tolist())
+# [1234567.89, 987654.32, 45678.90, 2500.0, 156789.45, 12345.67, 789012.34, 3456.78]
+
+# Mixed Arabic and ASCII numbers (real-world scenario)
+mixed_data = pd.Series([
+    "١٬٢٣٤٫٥٦",        # Arabic-Indic: 1,234.56
+    "٩٨٧٫٠١",          # Arabic-Indic: 987.01
+    "1,234.56",         # ASCII: 1,234.56 (same format, different digits)
+    "٥٬٦٧٨٫٩٠",        # Arabic-Indic: 5,678.90
+    "789.01"            # ASCII: 789.01
+])
+
+result = parse_series(mixed_data)
+print("Mixed Arabic/ASCII:", result.tolist())
+# [1234.56, 987.01, 1234.56, 5678.90, 789.01]
 ```
 
 ### Scientific Notation
@@ -203,7 +433,7 @@ parse_number("1,000")                 # → 1000 (int)
 # Large integers return string (for precision)
 parse_number("999999999999999999")   # → '999999999999999999' (str)
 
-# Decimals always return string  
+# Decimals always return string
 parse_number("42.0")                 # → '42.0' (str)
 parse_number("1,234.56")             # → '1234.56' (str)
 
@@ -219,27 +449,39 @@ The library is optimized for high-performance processing:
 ### Benchmarks
 
 - **Single numbers**: ~0.01ms per number
-- **Pandas Series**: <0.5s for 10,000 numbers  
+- **Pandas Series**: <0.5s for 10,000 numbers
 - **Memory usage**: Minimal overhead with vectorized operations
 - **Accuracy**: >99% automatic format detection
 
 ### Performance Tips
 
-1. **Reuse detectors** for multiple numbers in the same format
-2. **Use pandas integration** for large datasets
-3. **Pre-train detectors** with sample data for consistent formats
+1. **Automatic learning** - The system learns from your data automatically
+2. **Use pandas integration** for large datasets (vectorized processing)
+3. **Consistent format datasets** achieve highest performance and accuracy
 
 ```python
-# ✅ Efficient for multiple numbers
-detector = LocaleDetector()
-detector.ingest("1,234.56")  # Train once
-
-results = [parse_number(num, detector) for num in many_numbers]
-
-# ✅ Even better: use pandas for large datasets  
+# ✅ Best: Let the system learn automatically from your data
 import pandas as pd
-series = pd.Series(many_numbers)
-results = parse_series(series, detector)
+from intl_number_parser import parse_series
+
+# European financial data - system learns the format automatically
+financial_data = pd.Series([
+    "1.234.567,89", "987.654,32", "45.678,90", "2.500,00"
+])
+
+# Automatic detection and parsing in one step
+results = parse_series(financial_data)
+# System automatically detects: periods=thousands, comma=decimal
+
+# ✅ For mixed processing: let detector learn from first dataset
+detector = LocaleDetector()
+us_data = ["1,234.56", "789.01", "12,345.67"]
+for value in us_data:
+    parse_number(value, detector)  # Learns US format
+
+# Now use trained detector for similar data
+more_us_data = ["5,678.90", "1,111.11", "999.99"]
+results = [parse_number(num, detector) for num in more_us_data]
 ```
 
 ## 🛠️ API Reference
@@ -264,6 +506,8 @@ Parse a single number from any international format.
 #### `parse_series(series: pd.Series, detector: LocaleDetector | None = None) -> pd.Series`
 
 Parse a pandas Series of international number strings.
+
+**Requirements:** pandas library must be installed
 
 **Parameters:**
 - `series` (pd.Series): Series containing string representations of numbers
@@ -321,7 +565,7 @@ make install-all
 ```bash
 # Code quality
 make lint                 # Run linter
-make format              # Format code  
+make format              # Format code
 make typecheck           # Type checking
 make check               # Run all quality checks
 
@@ -394,9 +638,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🙏 Acknowledgments
 
 - **Unicode Consortium** for international digit standards
-- **Pandas Team** for vectorization inspiration  
+- **Pandas Team** for vectorization inspiration
 - **Python Community** for excellent tooling ecosystem
 
 ---
 
-**Made with ❤️ for the global Python community** 
+**Made with ❤️ for the global Python community**

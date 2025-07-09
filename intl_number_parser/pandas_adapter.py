@@ -6,8 +6,29 @@ vectorized parsing of pandas Series containing international number formats.
 
 from __future__ import annotations
 
-import numpy as np
-import pandas as pd
+from typing import TYPE_CHECKING
+
+try:
+    import numpy as np
+    import pandas as pd
+
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    # Create dummy modules for runtime when pandas is not available
+    if not TYPE_CHECKING:
+
+        class _DummyModule:
+            def __getattr__(self, name: str) -> object:
+                return None
+
+        pd = _DummyModule()  # type: ignore[assignment]
+        np = _DummyModule()  # type: ignore[assignment]
+
+if TYPE_CHECKING:
+    # These imports are only for type checking, not runtime
+    import numpy as np
+    import pandas as pd
 
 from .core import parse_number
 from .detector import LocaleDetector
@@ -15,6 +36,18 @@ from .detector import LocaleDetector
 # Constants for dataset sampling thresholds
 _SMALL_DATASET_THRESHOLD = 50
 _LARGE_DATASET_THRESHOLD = 30
+
+# Error message for missing pandas
+_PANDAS_ERROR_MSG = (
+    "pandas is required for parse_series functionality. "
+    "Install with: pip install intl-number-parser[pandas]"
+)
+
+
+def _check_pandas_available() -> None:
+    """Check if pandas is available, raise ImportError if not."""
+    if not PANDAS_AVAILABLE:
+        raise ImportError(_PANDAS_ERROR_MSG)
 
 
 def parse_series(
@@ -35,6 +68,9 @@ def parse_series(
     Returns:
         pandas Series with float64 dtype containing parsed numeric values.
         Invalid numbers are converted to NaN. Index and name are preserved.
+
+    Raises:
+        ImportError: If pandas is not installed
 
     Examples:
         >>> import pandas as pd
@@ -65,6 +101,8 @@ def parse_series(
     Performance:
         Designed to parse 10,000 values in under 0.5 seconds.
     """
+    _check_pandas_available()
+
     # Handle empty series
     if len(series) == 0:
         return pd.Series([], dtype=np.float64, index=series.index, name=series.name)
@@ -102,7 +140,8 @@ def parse_series(
                 indices.extend(
                     range(max(20, len(valid_values) - 10), len(valid_values))
                 )
-            sample_values = valid_values.iloc[list(set(indices))]
+            sample_indices = np.array(sorted(set(indices)))
+            sample_values = valid_values.iloc[sample_indices]
 
         for value in sample_values:
             detector.ingest(str(value))
@@ -136,6 +175,7 @@ def _vectorized_parse(str_series: pd.Series, detector: LocaleDetector) -> np.nda
     Returns:
         numpy array of parsed float values, with NaN for unparseable values
     """
+    _check_pandas_available()
 
     # For optimal performance, we use pandas apply which is optimized
     # This is faster than pure Python loops and handles edge cases well
