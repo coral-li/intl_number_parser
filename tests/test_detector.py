@@ -359,3 +359,76 @@ class TestLocaleDetectorIntegration:
 
         accuracy = correct_detections / len(test_cases)
         assert accuracy >= 0.99  # ≥99% accuracy requirement
+
+
+class TestMissingDetectorCoverage:
+    """Additional tests to achieve 100% coverage for missing detector branches."""
+
+    def test_should_cover_auto_lock_ratio_conditions(self):
+        """Test auto-lock conditions with ratio calculations."""
+        # Create detector with custom candidates
+        candidates = [
+            LocaleCandidate(decimal=".", thousands=",", group_size=3, score=0),
+            LocaleCandidate(decimal=",", thousands=".", group_size=3, score=0),
+        ]
+        detector = LocaleDetector(candidates)
+
+        # Set up scores to test ratio-based auto-lock
+        candidates[0].score = 20  # Leader
+        candidates[1].score = 1  # Runner-up
+
+        # This should trigger the ≥10x advantage auto-lock condition
+        assert detector.is_locked
+        assert detector.confidence >= 0.98
+
+    def test_should_cover_confidence_edge_cases(self):
+        """Test confidence calculation edge cases."""
+        # Create detector with candidates
+        candidates = [
+            LocaleCandidate(decimal=".", thousands=",", group_size=3, score=0),
+            LocaleCandidate(decimal=",", thousands=".", group_size=3, score=0),
+        ]
+        detector = LocaleDetector(candidates)
+
+        # Test confidence when all scores are 0
+        assert detector.confidence == 0.0
+
+        # Test confidence with one positive, one negative
+        candidates[0].score = 5
+        candidates[1].score = -1
+
+        confidence = detector.confidence
+        assert 0.7 <= confidence <= 0.99
+
+    def test_should_cover_best_candidate_all_negative(self):
+        """Test best_candidate when all scores are negative."""
+        # Create detector with candidates
+        candidates = [
+            LocaleCandidate(decimal=".", thousands=",", group_size=3, score=-5),
+            LocaleCandidate(decimal=",", thousands=".", group_size=3, score=-3),
+        ]
+        detector = LocaleDetector(candidates)
+
+        # Should return None when all scores are negative
+        assert detector.best_candidate is None
+
+    def test_should_cover_is_locked_insufficient_candidates(self):
+        """Test is_locked when there are insufficient candidates for ratio lock."""
+        # Create detector with only one candidate
+        candidates = [
+            LocaleCandidate(decimal=".", thousands=",", group_size=3, score=5),
+        ]
+        detector = LocaleDetector(candidates)
+
+        # Should be locked with only one positive candidate
+        assert detector.is_locked
+
+        # Create detector with no positive candidates
+        candidates = [
+            LocaleCandidate(decimal=".", thousands=",", group_size=3, score=-1),
+            LocaleCandidate(decimal=",", thousands=".", group_size=3, score=-2),
+        ]
+        detector = LocaleDetector(candidates)
+
+        # Should not be locked with no positive candidates
+        assert not detector.is_locked

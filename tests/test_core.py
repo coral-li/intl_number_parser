@@ -4,8 +4,12 @@ import pytest
 
 from intl_number_parser.candidates import LocaleCandidate
 from intl_number_parser.core import (
+    _apply_precision_constraints,
+    _build_number_pattern,
     _extract_number_from_text,
+    _extract_with_candidate,
     _extract_with_fallback_patterns,
+    _is_potential_decimal_separator,
     _is_valid_number_format,
     _normalize_canonical_number,
     _parse_mantissa_to_canonical,
@@ -904,3 +908,251 @@ class TestMissingCoverageParseMantissa:
         # Decimal without leading zero
         result = _parse_mantissa_to_canonical("-.123", None)
         assert result == "-0.123"
+
+
+class TestMissingCoverageAdditional:
+    """Additional tests to cover missing branches and achieve 100% coverage."""
+
+    def test_should_cover_scientific_notation_wrong_parts_length(self):
+        """Test scientific notation with wrong parts length."""
+        # This tests the branch where scientific notation doesn't have exactly 2 parts
+        # Create a malformed scientific notation that won't split properly
+        result = _parse_to_canonical("1.23ee4")
+        assert result == "1.23ee4"
+
+    def test_should_cover_fallback_extraction_path(self):
+        """Test fallback extraction path when detector has no best candidate."""
+        # Create detector with no best candidate
+        detector = LocaleDetector()
+        for candidate in detector.candidates:
+            candidate.score = -1
+
+        result = parse_number("123.45", detector)
+        assert result == "123.45"
+
+    def test_should_cover_extraction_returns_none(self):
+        """Test when extraction returns None."""
+        # This should trigger the case where no valid number is found
+        with pytest.raises(ValueError, match="No valid number found"):
+            parse_number("no numbers here")
+
+    def test_should_cover_fallback_mantissa_parsing(self):
+        """Test fallback mantissa parsing path."""
+        # Test with no candidate (fallback path)
+        result = _parse_mantissa_to_canonical("1,234.56", None)
+        assert result == "1234.56"
+
+    def test_should_cover_precision_constraints_value_error(self):
+        """Test precision constraints with value error."""
+        # Create a malformed number that would cause ValueError in int()
+        result = _apply_precision_constraints("not_a_number")
+        assert result == "not_a_number"
+
+    def test_should_cover_is_valid_number_format_period_patterns(self):
+        """Test _is_valid_number_format with period patterns."""
+        # Test invalid period patterns
+        assert not _is_valid_number_format("1.23.45")  # Invalid multiple decimals
+        assert not _is_valid_number_format("1.2345.67")  # Invalid multiple decimals
+
+        # Test valid thousands patterns
+        assert _is_valid_number_format("1.234.567")  # Valid thousands
+
+    def test_should_cover_is_valid_number_format_comma_patterns(self):
+        """Test _is_valid_number_format with comma patterns."""
+        # Test invalid comma patterns
+        assert not _is_valid_number_format("1,23,45")  # Invalid multiple decimals
+        assert not _is_valid_number_format("1,2345,67")  # Invalid multiple decimals
+
+        # Test valid thousands patterns
+        assert _is_valid_number_format("1,234,567")  # Valid thousands
+
+
+class TestMissingCoverageSpecificBranches:
+    """Test specific branches that are missing coverage."""
+
+    def test_should_cover_is_valid_number_format_comma_thousands_pattern_failure(self):
+        """Test comma thousands pattern validation failure."""
+        # Test cases that trigger comma_thousands_pattern check failure
+        assert not _is_valid_number_format("1,23,4")  # Invalid comma grouping
+        assert not _is_valid_number_format("1,2,3")  # Invalid comma grouping
+
+    def test_should_cover_is_valid_number_format_period_thousands_pattern_failure(self):
+        """Test period thousands pattern validation failure."""
+        # Test cases that trigger thousands_pattern check failure
+        assert not _is_valid_number_format("1.23.4")  # Invalid period grouping
+        assert not _is_valid_number_format("1.2.3")  # Invalid period grouping
+
+    def test_should_cover_parse_to_canonical_scientific_notation_fallback(self):
+        """Test scientific notation fallback in _parse_to_canonical."""
+        # Test scientific notation with incorrect parts length
+        result = _parse_to_canonical("1.23eee4")
+        assert result == "1.23eee4"
+
+    def test_should_cover_is_potential_decimal_separator_edge_case(self):
+        """Test _is_potential_decimal_separator edge cases."""
+        # Test cases that trigger specific branches
+        assert not _is_potential_decimal_separator("1.234.567", 1, "234.567")
+        assert _is_potential_decimal_separator("1.23", 1, "23")
+
+    def test_should_cover_parse_mantissa_fallback_no_potential_decimals(self):
+        """Test _parse_mantissa_to_canonical fallback with no potential decimals."""
+        # Test with no candidate and no decimal separators
+        result = _parse_mantissa_to_canonical("1234567", None)
+        assert result == "1234567"
+
+    def test_should_cover_parse_mantissa_fallback_with_potential_decimals(self):
+        """Test _parse_mantissa_to_canonical fallback with potential decimals."""
+        # Test with no candidate but with potential decimal separators
+        result = _parse_mantissa_to_canonical("1,234.56", None)
+        assert result == "1234.56"
+
+    def test_should_cover_apply_precision_constraints_value_error(self):
+        """Test _apply_precision_constraints with ValueError."""
+        # Test with malformed number that causes ValueError
+        result = _apply_precision_constraints("invalid_number")
+        assert result == "invalid_number"
+
+    def test_should_cover_scientific_notation_with_wrong_split_length(self):
+        """Test scientific notation with wrong split length."""
+        # Test scientific notation that splits into wrong number of parts
+        result = _parse_to_canonical("1.23eee4")
+        assert result == "1.23eee4"
+
+    def test_should_cover_candidate_without_thousands_in_build_pattern(self):
+        """Test _build_number_pattern with candidate without thousands separator."""
+        # Create candidate without thousands separator
+        candidate = LocaleCandidate(decimal=".", thousands=None, group_size=3, score=0)
+        pattern = _build_number_pattern(candidate)
+        assert pattern is not None
+        assert "thousands" not in pattern
+
+    def test_should_cover_parse_mantissa_with_candidate_and_thousands(self):
+        """Test _parse_mantissa_to_canonical with candidate and thousands separator."""
+        # Test with candidate having thousands separator
+        candidate = LocaleCandidate(decimal=".", thousands=",", group_size=3, score=0)
+        result = _parse_mantissa_to_canonical("1,234.56", candidate)
+        assert result == "1234.56"
+
+    def test_should_cover_parse_mantissa_with_candidate_no_decimal_pos(self):
+        """Test _parse_mantissa_to_canonical with candidate but no decimal position."""
+        # Test with candidate but no decimal separator in input
+        candidate = LocaleCandidate(decimal=".", thousands=",", group_size=3, score=0)
+        result = _parse_mantissa_to_canonical("1,234", candidate)
+        assert result == "1234"
+
+    def test_should_cover_parse_mantissa_with_candidate_no_thousands(self):
+        """Test _parse_mantissa_to_canonical with candidate but no thousands sep."""
+        # Test with candidate having no thousands separator
+        candidate = LocaleCandidate(decimal=".", thousands=None, group_size=3, score=0)
+        result = _parse_mantissa_to_canonical("1234.56", candidate)
+        assert result == "1234.56"
+
+
+class TestMissingCoverageCompleteTarget:
+    """Additional tests to achieve 100% coverage by targeting exact missing branches."""
+
+    def test_should_cover_is_valid_number_format_specific_branches(self):
+        """Test specific branches in _is_valid_number_format to reach 100% coverage."""
+        # Test cases that specifically trigger lines 129-133 and 137-140
+        # These are the comma pattern checks that need to fail the regex match
+        assert not _is_valid_number_format("1,2,34")  # Invalid comma decimal pattern
+        # Note: "1,234,5" is valid as thousands pattern, need different test cases
+        assert not _is_valid_number_format(
+            "1,23,45"
+        )  # Invalid comma decimal pattern - not matching thousands pattern
+
+        # Test cases that specifically trigger period pattern checks
+        assert not _is_valid_number_format("1.2.34")  # Invalid period decimal pattern
+        assert not _is_valid_number_format(
+            "1.23.45"
+        )  # Invalid period decimal pattern - not matching thousands pattern
+
+    def test_should_cover_extract_with_candidate_no_matches(self):
+        """Test _extract_with_candidate when no matches are found."""
+        # Create a candidate and text that won't match
+        candidate = LocaleCandidate(decimal=".", thousands=",", group_size=3, score=0)
+        result = _extract_with_candidate("no numbers here", candidate)
+        assert result is None
+
+    def test_should_cover_extract_with_candidate_validation_failure(self):
+        """Test _extract_with_candidate when validation fails."""
+        # Create a candidate that will find a match but fail validation
+        candidate = LocaleCandidate(decimal=".", thousands=",", group_size=3, score=0)
+        result = _extract_with_candidate("1..23", candidate)
+        assert result == "1"  # Returns the first valid match found
+
+    def test_should_cover_parse_to_canonical_scientific_wrong_parts(self):
+        """Test _parse_to_canonical with scientific notation having wrong parts."""
+        # Test scientific notation that doesn't split into exactly 2 parts
+        result = _parse_to_canonical("1.23")  # No 'e' at all
+        assert result == "1.23"
+
+        # Test with malformed scientific notation
+        result = _parse_to_canonical("1eee2")  # Multiple 'e' characters
+        assert result == "1eee2"
+
+    def test_should_cover_is_potential_decimal_separator_false_case(self):
+        """Test _is_potential_decimal_separator returning False."""
+        # Test case where it returns False due to pattern mismatch
+        assert not _is_potential_decimal_separator(
+            "1.234.567", 1, "234.567"
+        )  # Multiple periods shouldn't be decimal
+
+        # Test case where it returns True for valid pattern
+        assert _is_potential_decimal_separator("1.23", 1, "23")
+
+    def test_should_cover_parse_mantissa_fallback_edge_cases(self):
+        """Test _parse_mantissa_to_canonical fallback logic edge cases."""
+        # Test fallback with empty decimal match
+        result = _parse_mantissa_to_canonical("1,234", None)
+        assert result == "1.234"  # Comma gets converted to period in fallback
+
+        # Test fallback with potential decimal separator
+        result = _parse_mantissa_to_canonical("1,234.56", None)
+        assert result == "1234.56"
+
+    def test_should_cover_precision_constraints_malformed_input(self):
+        """Test _apply_precision_constraints with malformed input."""
+        # Test with input that can't be converted to int
+        result = _apply_precision_constraints("abc")
+        assert result == "abc"
+
+        # Test with empty string
+        result = _apply_precision_constraints("")
+        assert result == ""
+
+    def test_should_cover_extract_number_from_text_no_detector(self):
+        """Test _extract_number_from_text with no detector."""
+        # Test with None detector
+        result = _extract_number_from_text("123.45", None)
+        assert result is not None
+        assert result[0] == "123.45"
+
+    def test_should_cover_parse_number_invalid_format_after_extraction(self):
+        """Test parse_number with invalid format after extraction."""
+        # This should trigger the validation failure path
+        with pytest.raises(ValueError, match="No valid number found"):
+            parse_number(
+                "1..23"
+            )  # Invalid format that might pass extraction but fail validation
+
+    def test_should_cover_build_number_pattern_with_thousands(self):
+        """Test _build_number_pattern with thousands separator."""
+        # Test with thousands separator
+        candidate = LocaleCandidate(decimal=".", thousands=",", group_size=3, score=0)
+        pattern = _build_number_pattern(candidate)
+        assert pattern is not None
+        assert "," in pattern
+
+    def test_should_cover_normalize_canonical_number_edge_cases(self):
+        """Test _normalize_canonical_number with all edge cases."""
+        # Test all normalization cases
+        assert _normalize_canonical_number("123") == "123"
+        assert _normalize_canonical_number("123.0") == "123.0"
+        assert _normalize_canonical_number("0.123") == "0.123"
+        assert _normalize_canonical_number(".123") == "0.123"
+        assert _normalize_canonical_number("-.123") == "-0.123"
+        assert _normalize_canonical_number("+.123") == "0.123"
+        assert _normalize_canonical_number("123.") == "123.0"
+        assert _normalize_canonical_number("-123.") == "-123.0"
+        assert _normalize_canonical_number("+123.") == "123.0"

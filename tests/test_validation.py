@@ -1,7 +1,14 @@
 """Tests for validation logic and numeric token parsing."""
 
 from intl_number_parser.candidates import LocaleCandidate
-from intl_number_parser.validation import validate
+from intl_number_parser.validation import (
+    _validate_characters_and_signs,
+    _validate_decimal_parts,
+    _validate_exponent,
+    _validate_integer_part,
+    _validate_thousands_groups,
+    validate,
+)
 
 
 class TestBasicValidation:
@@ -432,3 +439,113 @@ class TestSpecificBranches:
         # Number with e/E at start or end (not scientific notation)
         assert validate("e123", candidate) is False
         assert validate("123e", candidate) is False
+
+
+class TestMissingValidationCoverage:
+    """Additional tests to achieve 100% coverage for missing validation branches."""
+
+    def test_should_cover_validate_exponent_edge_cases(self):
+        """Test _validate_exponent edge cases."""
+        # Test empty exponent
+        assert not _validate_exponent("")
+
+        # Test exponent with only sign (no digits)
+        assert not _validate_exponent("+")
+        assert not _validate_exponent("-")
+
+        # Test valid exponents
+        assert _validate_exponent("123")
+        assert _validate_exponent("+123")
+        assert _validate_exponent("-123")
+
+    def test_should_cover_validate_characters_and_signs_edge_cases(self):
+        """Test _validate_characters_and_signs edge cases."""
+        us_candidate = LocaleCandidate(
+            decimal=".", thousands=",", group_size=3, score=0
+        )
+
+        # Test with only sign (no digits)
+        valid, idx = _validate_characters_and_signs("+", us_candidate)
+        assert not valid
+        assert idx == 0
+
+        # Test with multiple signs
+        valid, idx = _validate_characters_and_signs("+-123", us_candidate)
+        assert not valid
+        assert idx == 0
+
+        # Test with invalid characters
+        valid, idx = _validate_characters_and_signs("12@34", us_candidate)
+        assert not valid
+        assert idx == 0
+
+    def test_should_cover_validate_decimal_parts_edge_cases(self):
+        """Test _validate_decimal_parts edge cases."""
+        us_candidate = LocaleCandidate(
+            decimal=".", thousands=",", group_size=3, score=0
+        )
+
+        # Test with empty fractional part
+        valid, integer_part = _validate_decimal_parts("123.", us_candidate)
+        assert not valid
+        assert integer_part == ""
+
+        # Test with non-digit fractional part
+        valid, integer_part = _validate_decimal_parts("123.abc", us_candidate)
+        assert not valid
+        assert integer_part == ""
+
+        # Test with multiple decimal separators
+        valid, integer_part = _validate_decimal_parts("123.45.67", us_candidate)
+        assert not valid
+        assert integer_part == ""
+
+        # Test with empty integer part (valid fractional number)
+        valid, integer_part = _validate_decimal_parts(".123", us_candidate)
+        assert valid
+        assert integer_part == ""
+
+    def test_should_cover_validate_integer_part_edge_cases(self):
+        """Test _validate_integer_part edge cases."""
+        us_candidate = LocaleCandidate(
+            decimal=".", thousands=",", group_size=3, score=0
+        )
+
+        # Test with empty integer part
+        assert not _validate_integer_part("", us_candidate)
+
+        # Test with candidate that has no thousands separator
+        no_thousands_candidate = LocaleCandidate(
+            decimal=".", thousands=None, group_size=3, score=0
+        )
+        assert _validate_integer_part("123", no_thousands_candidate)
+        assert not _validate_integer_part("12a3", no_thousands_candidate)
+
+        # Test with single group that is empty
+        assert not _validate_integer_part("", us_candidate)
+
+        # Test with single group that has invalid characters
+        assert not _validate_integer_part("12a3", us_candidate)
+
+    def test_should_cover_validate_thousands_groups_edge_cases(self):
+        """Test _validate_thousands_groups edge cases."""
+        us_candidate = LocaleCandidate(
+            decimal=".", thousands=",", group_size=3, score=0
+        )
+
+        # Test with empty group
+        assert not _validate_thousands_groups(["123", "", "456"], us_candidate)
+
+        # Test with non-digit group
+        assert not _validate_thousands_groups(["123", "abc", "456"], us_candidate)
+
+        # Test with leading group too large
+        assert not _validate_thousands_groups(["1234", "567", "890"], us_candidate)
+
+        # Test with subsequent group wrong size
+        assert not _validate_thousands_groups(["123", "45", "890"], us_candidate)
+
+        # Test with valid groups
+        assert _validate_thousands_groups(["1", "234", "567"], us_candidate)
+        assert _validate_thousands_groups(["12", "234", "567"], us_candidate)
+        assert _validate_thousands_groups(["123", "234", "567"], us_candidate)
