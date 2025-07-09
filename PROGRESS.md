@@ -5,12 +5,12 @@ A robust, locale-aware international number parsing library for Python that auto
 
 **Goal**: Achieve ≥99% autodetection accuracy with full type hints, 100% branch coverage, and production-ready quality.
 
-## 🎯 Current Status: **Task 01 Complete** ✅
+## 🎯 Current Status: **Task 02 Complete** ✅
 
 ### 📊 Progress Summary
-- **Completed**: 1/10 tasks (10%)
-- **Current Phase**: Unicode Normalization & Digit Mapping
-- **Next Phase**: Locale Candidate Definitions
+- **Completed**: 2/10 tasks (20%)
+- **Current Phase**: Locale Candidate Definitions
+- **Next Phase**: Validation Logic
 
 ## ✅ Completed Tasks
 
@@ -42,26 +42,47 @@ normalize_token("1 234,56")         # → "1 234,56"
 normalize_token("５．２")            # → "5.2"
 ```
 
+### Task 02 – Locale Candidate Definitions
+**Status**: ✅ **COMPLETE** (100% test coverage)
+**Files Created**:
+- `intl_number_parser/locale.py` - Main implementation
+- `tests/test_locale.py` - Comprehensive test suite (20 tests)
+
+**Key Features Implemented**:
+- ✅ `LocaleCandidate` dataclass with full type hints
+- ✅ All 6 common separator permutations defined in `COMMON_CANDIDATES`
+- ✅ US/UK format: `1,234.56` (comma thousands, period decimal)
+- ✅ European format: `1.234,56` (period thousands, comma decimal)
+- ✅ NBSP thousands + comma decimal: `1 234,56`
+- ✅ Space thousands + dot decimal: `1 234.56`
+- ✅ Swiss format: `1'234.56` (apostrophe thousands)
+- ✅ Space thousands + comma decimal: `1 234 567,89`
+- ✅ `all_candidates()` factory method returning fresh instances
+- ✅ Mutable score field for evidence accumulation
+- ✅ Comprehensive docstrings and examples
+- ✅ Mypy strict mode compliance (no errors)
+
+**Test Results**: 20/20 tests PASSED ✅
+
+**Example Usage**:
+```python
+from intl_number_parser.locale import LocaleCandidate, COMMON_CANDIDATES, all_candidates
+
+# Access predefined common formats
+len(COMMON_CANDIDATES)  # → 6
+
+# Create fresh candidates for detection session
+candidates = all_candidates()
+candidates[0].score += 1  # Evidence accumulation
+
+# Custom locale candidate
+custom = LocaleCandidate(decimal=".", thousands="'", group_size=3, score=0)
+```
+
 ## 🔄 Upcoming Tasks
 
-### Task 02 – Locale Candidate Definitions
-**Status**: 🔄 **NEXT UP**
-**Target Files**: `intl_number_parser/locale.py`
-
-**Requirements**:
-- Create `LocaleCandidate` dataclass with decimal/thousands separators
-- Implement `COMMON_CANDIDATES` covering 6 common formats:
-  1. `1,234.56` (US/UK style)
-  2. `1.234,56` (European style)
-  3. `1 234,56` (NBSP thousands, comma decimal)
-  4. `1 234.56` (space thousands, dot decimal)
-  5. `1'234.56` (Swiss style)
-  6. `1 234 567,89` (space thousands, comma decimal)
-- Factory method `all_candidates()` with fresh score=0
-- Full type hints + mypy compliance
-
 ### Task 03 – Validation Logic
-**Status**: 🔄 **PENDING**
+**Status**: 🔄 **NEXT UP**
 **Target Files**: `intl_number_parser/validation.py`
 
 **Requirements**:
@@ -142,14 +163,15 @@ intl-number-parser/
 ├── intl_number_parser/
 │   ├── __init__.py          ✅ Created
 │   ├── unicode.py           ✅ Complete (normalize_token)
-│   ├── locale.py            🔄 Next (LocaleCandidate)
-│   ├── validation.py        ⏳ Pending
+│   ├── locale.py            ✅ Complete (LocaleCandidate)
+│   ├── validation.py        🔄 Next (validation logic)
 │   ├── detector.py          ⏳ Pending
 │   ├── core.py              ⏳ Pending
 │   └── pandas_support.py    ⏳ Pending
 ├── tests/
 │   ├── __init__.py          ✅ Created
 │   ├── test_unicode.py      ✅ Complete (21 tests)
+│   ├── test_locale.py       ✅ Complete (20 tests)
 │   └── test_*.py            ⏳ Pending
 ├── tasks/                   📋 Requirements (10 files)
 ├── REQUIREMENTS.md          📋 Project specs
@@ -166,17 +188,18 @@ intl-number-parser/
 
 ## 📈 Performance Benchmarks
 - **Unicode Normalization**: Tested with 10,000 character strings (O(n) confirmed)
-- **Test Suite**: 21 tests execute in 0.02s
+- **Test Suite**: 46 tests execute in 0.14s (21 unicode + 20 locale + 5 additional)
 
 ## 🚀 Next Steps for Developer
 
-1. **Start Task 02**: Implement locale candidate data structures
+1. **Start Task 03**: Implement validation logic for locale candidates
 2. **Focus Areas**:
-   - Create `LocaleCandidate` dataclass in `intl_number_parser/locale.py`
-   - Define the 6 common separator permutations
-   - Ensure full type hints and mypy compliance
-3. **Testing**: Follow TDD approach established in Task 01
-4. **Reference**: Check `REQUIREMENTS.md` for locale autodetection strategy details
+   - Create `validate_token_against_candidate()` function in `intl_number_parser/validation.py`
+   - Handle single decimal separator validation
+   - Implement thousands grouping validation (exactly 3 digits each)
+   - Scientific notation validation (no thousands separators in mantissa)
+3. **Testing**: Continue TDD approach with comprehensive test coverage
+4. **Reference**: Check `tasks/03-validation-logic.md` for detailed requirements
 
 ## 🧪 Testing Strategy
 - **TDD Approach**: Write tests first, then implement
@@ -192,5 +215,5 @@ intl-number-parser/
 
 ---
 
-*Last Updated: Task 01 completed successfully*
-*Next Milestone: Task 02 - Locale Candidate Definitions* 
+*Last Updated: Task 02 completed successfully*
+*Next Milestone: Task 03 - Validation Logic* 
