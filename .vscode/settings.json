@@ -1,0 +1,136 @@
+{
+    // ============================================================================
+    // Editor Configuration
+    // ============================================================================
+    "editor.formatOnSave": true,
+    "editor.formatOnType": false,
+    "editor.formatOnPaste": true,
+    "editor.codeActionsOnSave": {
+        "source.fixAll": "explicit",
+        "source.organizeImports": "explicit"
+    },
+    "editor.rulers": [88],
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true,
+    "editor.trimAutoWhitespace": true,
+    "files.trimTrailingWhitespace": true,
+    "files.insertFinalNewline": true,
+    "files.trimFinalNewlines": true,
+
+    // ============================================================================
+    // Python Configuration
+    // ============================================================================
+    "[python]": {
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.fixAll.ruff": "explicit",
+            "source.organizeImports.ruff": "explicit"
+        }
+    },
+
+    // ============================================================================
+    // Ruff Configuration (Linter & Formatter)
+    // ============================================================================
+    "ruff.enable": true,
+    "ruff.lint.enable": true,
+    "ruff.format.enable": true,
+    "ruff.organizeImports": true,
+    "ruff.fixAll": true,
+    "ruff.showSyntaxErrors": true,
+    "ruff.codeAction.fixViolation": {
+        "enable": true
+    },
+    "ruff.codeAction.disableRuleComment": {
+        "enable": true
+    },
+
+    // ============================================================================
+    // Python Extension Configuration
+    // ============================================================================
+    "python.defaultInterpreterPath": ".venv/bin/python",
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.inlayHints.variableTypes": true,
+    "python.analysis.inlayHints.functionReturnTypes": true,
+    "python.analysis.inlayHints.callArgumentNames": true,
+    "python.analysis.inlayHints.pytestParameters": true,
+
+    // ============================================================================
+    // MyPy Configuration
+    // ============================================================================
+    "mypy-type-checker.args": [
+        "--strict",
+        "--ignore-missing-imports"
+    ],
+    "mypy-type-checker.severity": {
+        "error": "Error",
+        "note": "Information"
+    },
+
+    // ============================================================================
+    // Testing Configuration
+    // ============================================================================
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestArgs": [
+        "tests/",
+        "--verbose",
+        "--tb=short"
+    ],
+    "python.testing.autoTestDiscoverOnSaveEnabled": true,
+
+    // ============================================================================
+    // File Associations
+    // ============================================================================
+    "files.associations": {
+        "*.py": "python",
+        "pyproject.toml": "toml",
+        "*.toml": "toml"
+    },
+
+    // ============================================================================
+    // Git Configuration
+    // ============================================================================
+    "git.autofetch": true,
+    "git.confirmSync": false,
+    "git.enableSmartCommit": true,
+
+    // ============================================================================
+    // Terminal Configuration
+    // ============================================================================
+    "terminal.integrated.defaultProfile.osx": "zsh",
+    "terminal.integrated.cwd": "${workspaceFolder}",
+
+    // ============================================================================
+    // Exclude patterns for search/file watcher
+    // ============================================================================
+    "search.exclude": {
+        "**/.git": true,
+        "**/.ruff_cache": true,
+        "**/.mypy_cache": true,
+        "**/.pytest_cache": true,
+        "**/htmlcov": true,
+        "**/__pycache__": true,
+        "**/*.egg-info": true,
+        "**/build": true,
+        "**/dist": true,
+        "**/.venv": true,
+        "**/node_modules": true,
+        "**/coverage.xml": true,
+        "**/.coverage": true
+    },
+    "files.watcherExclude": {
+        "**/.git/objects/**": true,
+        "**/.git/subtree-cache/**": true,
+        "**/.ruff_cache/**": true,
+        "**/.mypy_cache/**": true,
+        "**/.pytest_cache/**": true,
+        "**/htmlcov/**": true,
+        "**/__pycache__/**": true,
+        "**/*.egg-info/**": true,
+        "**/build/**": true,
+        "**/dist/**": true,
+        "**/.venv/**": true,
+        "**/node_modules/**": true
+    }
+} 

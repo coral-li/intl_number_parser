@@ -1,0 +1,65 @@
+{
+    "recommendations": [
+        // ============================================================================
+        // Core Python Development
+        // ============================================================================
+        "ms-python.python",                    // Python extension pack
+        "ms-python.debugpy",                   // Python debugger
+        "ms-python.vscode-pylance",            // Python language server
+
+        // ============================================================================
+        // Formatting & Linting
+        // ============================================================================
+        "charliermarsh.ruff",                  // Ruff formatter & linter
+        "ms-python.mypy-type-checker",         // MyPy type checker
+
+        // ============================================================================
+        // Testing
+        // ============================================================================
+        "ms-python.python",                    // Includes pytest support
+        "littlefoxteam.vscode-python-test-adapter", // Test adapter for better test UI
+
+        // ============================================================================
+        // Git & Version Control
+        // ============================================================================
+        "mhutchie.git-graph",                  // Git graph visualization
+        "eamodio.gitlens",                     // Git blame and history
+
+        // ============================================================================
+        // Development Tools
+        // ============================================================================
+        "tamasfe.even-better-toml",            // TOML syntax highlighting
+        "ms-vscode.vscode-json",               // JSON syntax highlighting
+        "redhat.vscode-yaml",                  // YAML syntax highlighting
+        "ms-vscode.makefile-tools",            // Makefile support
+
+        // ============================================================================
+        // Documentation & Markdown
+        // ============================================================================
+        "yzhang.markdown-all-in-one",          // Markdown editing
+        "davidanson.vscode-markdownlint",      // Markdown linting
+
+        // ============================================================================
+        // Terminal & Shell
+        // ============================================================================
+        "ms-vscode.vscode-terminal",           // Enhanced terminal
+
+        // ============================================================================
+        // Code Quality & Security
+        // ============================================================================
+        "ms-python.bandit",                    // Security linting
+
+        // ============================================================================
+        // Productivity
+        // ============================================================================
+        "ms-vscode.vscode-codegraph",          // Code navigation
+        "streetsidesoftware.code-spell-checker", // Spell checker
+        "ms-vscode.vscode-jupyter",            // Jupyter notebook support
+
+        // ============================================================================
+        // Theme & UI (Optional)
+        // ============================================================================
+        "PKief.material-icon-theme",           // Material icons
+        "ms-vscode.vscode-color-theme"         // Color theme support
+    ]
+}
