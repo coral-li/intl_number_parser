@@ -1,15 +1,17 @@
-"""Test suite for the core number parsing engine.
-
-This module tests the parse_number function that converts international
-number formats to canonical Python numeric values.
-"""
-
-from __future__ import annotations
+"""Test cases for the core parsing module."""
 
 import pytest
 
 from intl_number_parser.candidates import LocaleCandidate
-from intl_number_parser.core import parse_number
+from intl_number_parser.core import (
+    _extract_number_from_text,
+    _extract_with_fallback_patterns,
+    _is_valid_number_format,
+    _normalize_canonical_number,
+    _parse_mantissa_to_canonical,
+    _parse_to_canonical,
+    parse_number,
+)
 from intl_number_parser.detector import LocaleDetector
 
 
@@ -595,3 +597,303 @@ class TestCoverageImprovements:
         # Test positive decimal point
         result = parse_number("+.123")
         assert result == "0.123"
+
+
+class TestMissingCoverageIsValidNumberFormat:
+    """Test cases to cover missing lines in _is_valid_number_format."""
+
+    def test_should_reject_invalid_period_decimal_pattern(self):
+        """Test decimal_like_pattern that doesn't match thousands_pattern."""
+        # This matches decimal_like_pattern but not thousands_pattern
+        # Pattern: digits.1or2or4+digits.digits -> should be invalid
+
+        # Test case: 1.23.45 (not a valid thousands pattern)
+        assert _is_valid_number_format("1.23.45") is False
+
+        # Test case: 1.23.456 (not a valid thousands pattern - 4 digits)
+        assert _is_valid_number_format("1.23.456") is False
+
+        # Test case: 1.2.34 (not a valid thousands pattern - 1 digit)
+        assert _is_valid_number_format("1.2.34") is False
+
+    def test_should_reject_invalid_comma_decimal_pattern(self):
+        """Test comma_decimal_pattern that doesn't match comma_thousands_pattern."""
+        # This matches comma_decimal_pattern but not comma_thousands_pattern
+        # Pattern: digits,1or2or4+digits,digits -> should be invalid
+
+        # Test case: 1,23,45 (not a valid comma thousands pattern)
+        assert _is_valid_number_format("1,23,45") is False
+
+        # Test case: 1,23,456 (not a valid comma thousands pattern - 4 digits)
+        assert _is_valid_number_format("1,23,456") is False
+
+        # Test case: 1,2,34 (not a valid comma thousands pattern - 1 digit)
+        assert _is_valid_number_format("1,2,34") is False
+
+    def test_should_accept_valid_thousands_patterns(self):
+        """Test that valid thousands patterns are accepted."""
+        # Valid period thousands patterns
+        assert _is_valid_number_format("1.234.567") is True
+        assert _is_valid_number_format("12.345.678") is True
+        assert _is_valid_number_format("123.456.789") is True
+
+        # Valid comma thousands patterns
+        assert _is_valid_number_format("1,234,567") is True
+        assert _is_valid_number_format("12,345,678") is True
+        assert _is_valid_number_format("123,456,789") is True
+
+
+class TestMissingCoverageExtractFallback:
+    """Test cases to cover missing lines in _extract_number_from_text fallback."""
+
+    def test_should_use_fallback_when_detector_has_no_best_candidate(self):
+        """Test fallback extraction when detector has no best candidate."""
+        # Create a detector with all negative scores
+        detector = LocaleDetector()
+        for _ in range(10):
+            detector.ingest("invalid")
+
+        # All candidates should have negative scores
+        assert detector.best_candidate is None
+
+        # Should use fallback patterns
+        result = _extract_number_from_text("Price: $1,234.56", detector)
+        assert result is not None
+        assert result[0] == "1,234.56"
+
+    def test_should_use_fallback_when_candidate_extraction_fails(self):
+        """Test fallback extraction when candidate-based extraction fails."""
+        # Create a detector with a best candidate that won't match the text
+        detector = LocaleDetector()
+        detector.ingest("1.234,56")  # European format
+
+        # Now try to extract from text that doesn't match the candidate
+        result = _extract_number_from_text("Price: $1,234.56", detector)
+        assert result is not None
+        assert result[0] == "1,234.56"
+
+    def test_should_return_first_match_from_fallback_patterns(self):
+        """Test that fallback patterns return the first match found."""
+        # Text with multiple numbers - should return the first one
+        result = _extract_with_fallback_patterns("Price $123.45 and $678.90")
+        assert result == "123.45"
+
+        # Text with mixed formats - should return the first one
+        result = _extract_with_fallback_patterns("European 1.234,56 and US 1,234.56")
+        assert result == "1.234,56"
+
+    def test_should_handle_fallback_patterns_no_matches(self):
+        """Test fallback patterns when no matches are found."""
+        # Text with no numbers
+        result = _extract_with_fallback_patterns("No numbers here")
+        assert result is None
+
+        # Text with only invalid patterns
+        result = _extract_with_fallback_patterns("Invalid: abc.def")
+        assert result is None
+
+    def test_should_handle_none_detector_with_fallback(self):
+        """Test extraction with None detector that creates temporary detector."""
+        # None detector should create temporary detector and use fallback if needed
+        result = _extract_number_from_text("Price: $1,234.56", None)
+        assert result is not None
+        assert result[0] == "1,234.56"
+
+
+class TestMissingCoverageParseToCanonical:
+    """Test cases to cover missing lines in _parse_to_canonical scientific notation."""
+
+    def test_should_handle_scientific_notation_with_incorrect_parts_length(self):
+        """Test scientific notation with parts length != 2."""
+        # Scientific notation with multiple e/E - splits on first e/E,
+        # preserves the rest
+        # re.split(r"[eE]", "1.23eE4", maxsplit=1) = ["1.23", "E4"]
+        # Reconstructs as: "1.23" + "e" + "E4" = "1.23eE4"
+        result = _parse_to_canonical("1.23eE4")
+        assert result == "1.23eE4"  # Preserves malformed scientific notation
+
+    def test_should_handle_scientific_notation_e_char_preservation(self):
+        """Test that e/E character is preserved in scientific notation."""
+        # Test lowercase e
+        result = _parse_to_canonical("1.23e4")
+        assert "e" in result
+        assert result == "1.23e4"
+
+        # Test uppercase E
+        result = _parse_to_canonical("1.23E4")
+        assert "E" in result
+        assert result == "1.23E4"
+
+        # Test with thousands separators in mantissa (should be removed)
+        result = _parse_to_canonical("1,234e4")
+        assert (
+            result == "1.234e4"
+        )  # Without candidate, comma is treated as decimal separator
+
+        # Test with different candidates
+        candidate = LocaleCandidate(decimal=",", thousands=".", group_size=3, score=0)
+        result = _parse_to_canonical("1.234,56e4", candidate)
+        assert result == "1234.56e4"
+
+    def test_should_handle_mixed_case_e_in_scientific_notation(self):
+        """Test mixed case handling in scientific notation."""
+        # Test that original case is preserved
+        result = _parse_to_canonical("123E-4")
+        assert result == "123E-4"
+
+        result = _parse_to_canonical("123e+4")
+        assert result == "123e+4"
+
+    def test_should_handle_complex_scientific_notation_with_separators(self):
+        """Test complex scientific notation with thousands separators."""
+        # US format with thousands in mantissa
+        us_candidate = LocaleCandidate(
+            decimal=".", thousands=",", group_size=3, score=0
+        )
+        result = _parse_to_canonical("1,234.56e4", us_candidate)
+        assert result == "1234.56e4"
+
+        # European format with thousands in mantissa
+        eu_candidate = LocaleCandidate(
+            decimal=",", thousands=".", group_size=3, score=0
+        )
+        result = _parse_to_canonical("1.234,56E-4", eu_candidate)
+        assert result == "1234.56E-4"
+
+
+class TestMissingCoverageNormalizeCanonical:
+    """Test cases to cover missing lines in _normalize_canonical_number."""
+
+    def test_should_handle_positive_decimal_without_leading_zero(self):
+        """Test +.123 -> 0.123 (line 349)."""
+        # Test positive decimal without leading zero
+        result = _normalize_canonical_number("+.123")
+        assert result == "0.123"
+
+        result = _normalize_canonical_number("+.5")
+        assert result == "0.5"
+
+        result = _normalize_canonical_number("+.0")
+        assert result == "0.0"
+
+    def test_should_handle_negative_decimal_without_leading_zero(self):
+        """Test -.123 -> -0.123 (line 350)."""
+        # Test negative decimal without leading zero
+        result = _normalize_canonical_number("-.123")
+        assert result == "-0.123"
+
+        result = _normalize_canonical_number("-.5")
+        assert result == "-0.5"
+
+        result = _normalize_canonical_number("-.0")
+        assert result == "-0.0"
+
+    def test_should_handle_all_normalize_canonical_patterns(self):
+        """Test comprehensive normalization patterns."""
+        # Test regular decimal without leading zero
+        result = _normalize_canonical_number(".123")
+        assert result == "0.123"
+
+        # Test trailing decimal point
+        result = _normalize_canonical_number("123.")
+        assert result == "123.0"
+
+        # Test positive sign removal
+        result = _normalize_canonical_number("+123")
+        assert result == "123"
+
+        # Test combination of positive sign and decimal
+        result = _normalize_canonical_number("+123.456")
+        assert result == "123.456"
+
+        # Test combination of negative sign and trailing decimal
+        result = _normalize_canonical_number("-123.")
+        assert result == "-123.0"
+
+
+class TestMissingCoverageParseMantissa:
+    """Test cases to cover missing lines in _parse_mantissa_to_canonical."""
+
+    def test_should_handle_fallback_decimal_detection(self):
+        """Test fallback decimal detection when candidate is None."""
+        # Test with None candidate - should use fallback logic
+        result = _parse_mantissa_to_canonical("1,234.56", None)
+        assert result == "1234.56"
+
+        # Test with European format
+        result = _parse_mantissa_to_canonical("1.234,56", None)
+        assert result == "1234.56"
+
+        # Test with no decimal separator
+        result = _parse_mantissa_to_canonical("1234", None)
+        assert result == "1234"
+
+    def test_should_use_rightmost_decimal_separator_in_fallback(self):
+        """Test that fallback logic uses rightmost potential decimal separator."""
+        # Multiple potential decimal separators - should use rightmost
+        result = _parse_mantissa_to_canonical("1.234.56", None)
+        assert result == "1234.56"
+
+        result = _parse_mantissa_to_canonical("1,234,56", None)
+        assert result == "1234.56"
+
+        # Mixed separators - should use rightmost
+        result = _parse_mantissa_to_canonical("1.234,56", None)
+        assert result == "1234.56"
+
+        result = _parse_mantissa_to_canonical("1,234.56", None)
+        assert result == "1234.56"
+
+    def test_should_handle_no_decimal_separator_fallback(self):
+        """Test fallback when no decimal separator is found."""
+        # Only thousands separators - should remove all
+        result = _parse_mantissa_to_canonical("1,234,567", None)
+        assert result == "1234567"
+
+        result = _parse_mantissa_to_canonical("1.234.567", None)
+        assert result == "1234567"
+
+        # Mixed thousands separators
+        result = _parse_mantissa_to_canonical("1,234.567", None)
+        assert result == "1234567"
+
+        # With spaces and apostrophes
+        result = _parse_mantissa_to_canonical("1 234 567", None)
+        assert result == "1234567"
+
+        result = _parse_mantissa_to_canonical("1'234'567", None)
+        assert result == "1234567"
+
+    def test_should_handle_potential_decimal_separators_detection(self):
+        """Test potential decimal separators detection logic."""
+        # Test edge cases for potential decimal detection
+        # Number with 3 digits after separator (could be thousands)
+        result = _parse_mantissa_to_canonical("1.234", None)
+        assert (
+            result == "1.234"
+        )  # Without preceding thousands pattern, treated as decimal
+
+        # Number with 1-2 digits after separator (likely decimal)
+        result = _parse_mantissa_to_canonical("1.23", None)
+        assert result == "1.23"  # Should be treated as decimal
+
+        result = _parse_mantissa_to_canonical("1.2", None)
+        assert result == "1.2"  # Should be treated as decimal
+
+        # Test with more complex patterns
+        result = _parse_mantissa_to_canonical("12.345.67", None)
+        assert result == "12345.67"  # Last separator is decimal
+
+    def test_should_handle_fallback_with_signs(self):
+        """Test fallback logic with signed numbers."""
+        # Positive signed number
+        result = _parse_mantissa_to_canonical("+1,234.56", None)
+        assert result == "1234.56"
+
+        # Negative signed number
+        result = _parse_mantissa_to_canonical("-1,234.56", None)
+        assert result == "-1234.56"
+
+        # Decimal without leading zero
+        result = _parse_mantissa_to_canonical("-.123", None)
+        assert result == "-0.123"
