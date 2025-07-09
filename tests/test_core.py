@@ -506,3 +506,92 @@ class TestFallbackExtractionPaths:
         # String with no recognizable number patterns
         with pytest.raises(ValueError, match="No valid number found in token"):
             parse_number("completely invalid text with no numbers")
+
+
+class TestCoverageImprovements:
+    """Target specific uncovered lines to improve coverage above 95%."""
+
+    def test_should_handle_fallback_patterns_no_matches(self):
+        """Test _extract_with_fallback_patterns when no patterns match."""
+        # Test with text that has no valid number patterns
+        with pytest.raises(ValueError, match="No valid number found"):
+            parse_number("no numbers here at all")
+
+    def test_should_handle_malformed_scientific_notation(self):
+        """Test scientific notation parsing edge cases."""
+        # Test scientific notation with invalid exponent parts - extracts before 'e'
+        result = parse_number("1.23e")  # Missing exponent
+        assert result == "1.23"
+
+        # Test valid scientific notation with uppercase E
+        result = parse_number("1.23E+4")
+        assert result == "1.23E+4"
+
+    def test_should_handle_decimal_separator_edge_cases(self):
+        """Test _is_potential_decimal_separator edge cases."""
+        # Test edge cases that might hit specific branches
+        result = parse_number("1.23")  # Simple decimal
+        assert result == "1.23"
+
+        # Test with trailing decimal
+        result = parse_number("123.")
+        assert result == "123.0"
+
+    def test_should_handle_precision_constraints_edge_cases(self):
+        """Test _apply_precision_constraints edge cases."""
+        # Test ValueError handling in precision constraints
+        # This should test the ValueError catch block
+        result = parse_number("123")
+        assert result == 123
+
+        # Test very large integers that exceed int64
+        result = parse_number("9223372036854775808")  # 2^63 (MAX_INT64 + 1)
+        assert result == "9223372036854775808"
+
+        # Test scientific notation (should return string in scientific format)
+        result = parse_number("1.23e10")
+        assert result == "1.23e10"
+
+    def test_should_handle_thousands_pattern_detection(self):
+        """Test thousands pattern detection edge cases."""
+        # Test numbers that might trigger thousands pattern detection
+        result = parse_number("1,234,567")
+        assert result == 1234567
+
+        # Test mixed separators that might be ambiguous
+        result = parse_number("1.234.567")
+        assert result == 1234567
+
+    def test_should_handle_candidate_without_thousands_separator(self):
+        """Test candidates without thousands separator."""
+        # Create a detector with a candidate that has no thousands separator
+        detector = LocaleDetector()
+        candidate = LocaleCandidate(decimal=".", thousands=None, group_size=3, score=0)
+        detector.override(candidate)
+
+        result = parse_number("1234.56", detector)
+        assert result == "1234.56"
+
+    def test_should_handle_empty_decimal_part(self):
+        """Test handling of empty decimal parts."""
+        # Test with decimal separator but no digits after
+        result = parse_number("123.")
+        assert result == "123.0"
+
+        # Test with leading decimal point
+        result = parse_number(".123")
+        assert result == "0.123"
+
+    def test_should_handle_normalized_canonical_edge_cases(self):
+        """Test _normalize_canonical_number edge cases."""
+        # Test positive sign normalization
+        result = parse_number("+123.45")
+        assert result == "123.45"
+
+        # Test negative decimal point
+        result = parse_number("-.123")
+        assert result == "-0.123"
+
+        # Test positive decimal point
+        result = parse_number("+.123")
+        assert result == "0.123"

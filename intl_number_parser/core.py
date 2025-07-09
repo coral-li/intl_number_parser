@@ -67,17 +67,19 @@ def parse_number(token: str, detector: LocaleDetector | None = None) -> str | in
         raise ValueError(_NO_VALID_NUMBER_MSG)
 
     # Extract the first valid number from the normalized token
-    extracted_number = _extract_number_from_text(normalized_token, detector)
+    extraction_result = _extract_number_from_text(normalized_token, detector)
 
-    if extracted_number is None:
+    if extraction_result is None:
         raise ValueError(_NO_VALID_NUMBER_MSG)
+
+    extracted_number, used_candidate = extraction_result
 
     # Validate token for invalid patterns (multiple decimal points, etc.)
     if not _is_valid_number_format(normalized_token):
         raise ValueError(_NO_VALID_NUMBER_MSG)
 
-    # Parse the extracted number to canonical form
-    canonical_number = _parse_to_canonical(extracted_number)
+    # Parse the extracted number to canonical form using candidate info
+    canonical_number = _parse_to_canonical(extracted_number, used_candidate)
 
     # Apply precision constraints
     return _apply_precision_constraints(canonical_number)
@@ -138,7 +140,9 @@ def _is_valid_number_format(text: str) -> bool:
     return True
 
 
-def _extract_number_from_text(text: str, detector: LocaleDetector | None) -> str | None:
+def _extract_number_from_text(
+    text: str, detector: LocaleDetector | None
+) -> tuple[str, LocaleCandidate | None] | None:
     """Extract the first valid number from text using locale detection.
 
     Args:
@@ -161,10 +165,15 @@ def _extract_number_from_text(text: str, detector: LocaleDetector | None) -> str
     if best_candidate is not None:
         number = _extract_with_candidate(text, best_candidate)
         if number is not None:
-            return number
+            return (number, best_candidate)
 
     # Fallback: try all common patterns if candidate-based extraction fails
-    return _extract_with_fallback_patterns(text)
+    fallback_number = _extract_with_fallback_patterns(text)
+    if fallback_number is not None:
+        # For fallback, we don't have a specific candidate, return None
+        return (fallback_number, None)
+
+    return None
 
 
 def _extract_with_candidate(text: str, candidate: LocaleCandidate) -> str | None:
@@ -279,11 +288,14 @@ def _build_number_pattern(candidate: LocaleCandidate) -> str:
     )
 
 
-def _parse_to_canonical(number_str: str) -> str:
+def _parse_to_canonical(
+    number_str: str, candidate: LocaleCandidate | None = None
+) -> str:
     """Parse a number string to canonical form.
 
     Args:
         number_str: Number string in some international format
+        candidate: Optional locale candidate to use for parsing
 
     Returns:
         Canonical number string (suitable for float() or int())
@@ -299,14 +311,14 @@ def _parse_to_canonical(number_str: str) -> str:
             exponent_part = parts[1]
 
             # Parse mantissa part only
-            canonical_mantissa = _parse_mantissa_to_canonical(mantissa_part)
+            canonical_mantissa = _parse_mantissa_to_canonical(mantissa_part, candidate)
 
             # Reconstruct with original case e/E
             e_char = "e" if "e" in canonical else "E"
             return canonical_mantissa + e_char + exponent_part
 
     # Not scientific notation - parse as regular number
-    return _parse_mantissa_to_canonical(canonical)
+    return _parse_mantissa_to_canonical(canonical, candidate)
 
 
 def _is_potential_decimal_separator(canonical: str, pos: int, after_text: str) -> bool:
@@ -359,39 +371,68 @@ def _normalize_canonical_number(canonical: str) -> str:
     return canonical
 
 
-def _parse_mantissa_to_canonical(mantissa_str: str) -> str:
+def _parse_mantissa_to_canonical(
+    mantissa_str: str, candidate: LocaleCandidate | None = None
+) -> str:
     """Parse mantissa part (non-scientific notation) to canonical form."""
     canonical = mantissa_str.strip()
 
-    # Find all potential decimal separators
-    potential_decimals = []
-    for match in re.finditer(r"[.,]", canonical):
-        pos = match.start()
-        char = match.group()
-        after_text = canonical[pos + 1 :]
+    if candidate is not None:
+        # Use candidate information to properly interpret separators
+        decimal_char = candidate.decimal
+        thousands_char = candidate.thousands
 
-        if _is_potential_decimal_separator(canonical, pos, after_text):
-            potential_decimals.append((pos, char))
+        # Find the rightmost decimal separator if any
+        decimal_pos = canonical.rfind(decimal_char) if decimal_char in canonical else -1
 
-    # Use the rightmost potential decimal separator
-    if potential_decimals:
-        decimal_pos, decimal_char = potential_decimals[-1]
+        if decimal_pos >= 0:
+            # Split at decimal position
+            before_decimal = canonical[:decimal_pos]
+            after_decimal = canonical[decimal_pos + 1 :]
 
-        # Split at decimal position
-        before_decimal = canonical[:decimal_pos]
-        after_decimal = canonical[decimal_pos + 1 :]
+            # Remove thousands separators from integer part
+            if thousands_char:
+                before_decimal = before_decimal.replace(thousands_char, "")
 
-        # Remove all thousands separators from before decimal
-        before_decimal = re.sub(r"[,.\s\'\u00a0]", "", before_decimal)
+            # Keep only digits in decimal part (up to first non-digit)
+            decimal_match = re.match(r"(\d+)", after_decimal)
+            decimal_digits = decimal_match.group(1) if decimal_match else ""
 
-        # Keep only digits in decimal part (up to first non-digit)
-        decimal_match = re.match(r"(\d+)", after_decimal)
-        decimal_digits = decimal_match.group(1) if decimal_match else ""
-
-        canonical = before_decimal + "." + decimal_digits
+            canonical = before_decimal + "." + decimal_digits
+        # No decimal separator - just remove thousands separators
+        elif thousands_char:
+            canonical = canonical.replace(thousands_char, "")
     else:
-        # No decimal separator found - remove all thousands separators
-        canonical = re.sub(r"[,.\s\'\u00a0]", "", canonical)
+        # Fallback: use original auto-detection logic when no candidate
+        # Find all potential decimal separators
+        potential_decimals = []
+        for match in re.finditer(r"[.,]", canonical):
+            pos = match.start()
+            char = match.group()
+            after_text = canonical[pos + 1 :]
+
+            if _is_potential_decimal_separator(canonical, pos, after_text):
+                potential_decimals.append((pos, char))
+
+        # Use the rightmost potential decimal separator
+        if potential_decimals:
+            decimal_pos, decimal_char = potential_decimals[-1]
+
+            # Split at decimal position
+            before_decimal = canonical[:decimal_pos]
+            after_decimal = canonical[decimal_pos + 1 :]
+
+            # Remove all thousands separators from before decimal
+            before_decimal = re.sub(r"[,.\s\'\u00a0]", "", before_decimal)
+
+            # Keep only digits in decimal part (up to first non-digit)
+            decimal_match = re.match(r"(\d+)", after_decimal)
+            decimal_digits = decimal_match.group(1) if decimal_match else ""
+
+            canonical = before_decimal + "." + decimal_digits
+        else:
+            # No decimal separator found - remove all thousands separators
+            canonical = re.sub(r"[,.\s\'\u00a0]", "", canonical)
 
     return _normalize_canonical_number(canonical)
 
