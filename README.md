@@ -607,7 +607,7 @@ The project maintains high code quality standards:
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
+We welcome contributions!
 
 ### Quick Contribution Steps
 
