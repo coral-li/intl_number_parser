@@ -7,13 +7,12 @@ Requirements:
 - Enforce `black`, `isort`, and `ruff` with zero warnings.
 - GitHub Actions workflow (or alternative) running on every push/PR:
   1. `python -m pip install -e .[dev]`
-  2. `ruff`, `black --check`, `isort --check`.
-  3. `mypy --strict`.
-  4. `pytest` with coverage report.
+  2. `make check`.
+  3. `make test`.
 - Status badges in README.
 
 ## Acceptance Criteria
-- CI passes on Python 3.8, 3.12, and PyPy 3 latest.
+- CI passes on Python 3.12.
 - Pre-commit hooks configured for local dev.
 
 ## References

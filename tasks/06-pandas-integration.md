@@ -5,7 +5,7 @@ Provide `parse_series(series: pd.Series, detector: LocaleDetector | None = None)
 
 Implementation ideas:
 - Use `series.astype(str).str` vectorised string ops plus `series.apply` only where necessary.
-- Leverage `numba` or Cython optional acceleration (nice-to-have).
+- Leverage `numba` or Cython optional acceleration.
 - Return `pd.Series` of `float64`, `Int64`, or `Decimal` objects, preserving NA values.
 
 ## Acceptance Criteria

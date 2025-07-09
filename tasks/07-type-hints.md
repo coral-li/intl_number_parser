@@ -10,7 +10,6 @@ Ensure the entire library is fully typed per PEP 484 and passes `mypy --strict` 
 
 ## Notes
 - Prefer `from __future__ import annotations` for forward references.
-- Use `typing_extensions` for backports on Python 3.8.
 
 ## References
 - REQUIREMENTS.md – Robustness & Code Quality. 
