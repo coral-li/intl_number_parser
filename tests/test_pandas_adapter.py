@@ -257,6 +257,69 @@ class TestParseSeriesReturnTypes:
         assert result.iloc[0] == 9223372036854775808.0
         assert result.iloc[1] == 1234.56
 
+    def test_parse_series_float64_should_not_return_infinity(self):
+        """Default float64 mode should treat non-finite floats as parse failures."""
+        series = pd.Series(["1e309", "-1e309", "1,234.56"])
+
+        result = parse_series(series)
+
+        assert result.dtype == np.float64
+        assert pd.isna(result.iloc[0])
+        assert pd.isna(result.iloc[1])
+        assert result.iloc[2] == 1234.56
+
+    def test_parse_series_preserve_dtype_should_keep_exact_parser_values(self):
+        """Preserve mode should avoid lossy float64 conversion."""
+        series = pd.Series(
+            [
+                "9,007,199,254,740,993",
+                "9,223,372,036,854,775,808",
+                "12,345,678,901,234,567,890.12",
+                "1e309",
+                "invalid",
+                "",
+            ],
+            name="amounts",
+        )
+
+        result = parse_series(series, dtype="preserve")
+
+        assert result.dtype == object
+        assert result.name == "amounts"
+        assert result.iloc[0] == 9007199254740993
+        assert result.iloc[1] == "9223372036854775808"
+        assert result.iloc[2] == "12345678901234567890.12"
+        assert result.iloc[3] == "1e309"
+        assert pd.isna(result.iloc[4])
+        assert pd.isna(result.iloc[5])
+
+    def test_parse_series_object_dtype_should_alias_preserve_mode(self):
+        """Object dtype should be an alias for precision-preserving output."""
+        series = pd.Series(["9,007,199,254,740,993"])
+
+        result = parse_series(series, dtype="object")
+
+        assert result.dtype == object
+        assert result.iloc[0] == 9007199254740993
+
+    def test_parse_series_preserve_dtype_empty_series(self):
+        """Preserve mode should keep empty-series metadata with object dtype."""
+        index = pd.Index([], name="row")
+        series = pd.Series([], index=index, name="amounts")
+
+        result = parse_series(series, dtype="preserve")
+
+        assert result.dtype == object
+        assert result.index is index
+        assert result.name == "amounts"
+
+    def test_parse_series_should_reject_unknown_dtype(self):
+        """Unsupported parse output dtypes should fail clearly."""
+        series = pd.Series(["1,234.56"])
+
+        with pytest.raises(ValueError, match="dtype must be one of"):
+            parse_series(series, dtype="decimal")
+
     def test_parse_series_convert_dtypes_compatible(self):
         """Test that result is compatible with pandas convert_dtypes."""
         series = pd.Series(["1,234", "567", "89"])
