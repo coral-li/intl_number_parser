@@ -11,7 +11,7 @@ import unicodedata
 from typing import TYPE_CHECKING
 
 from .detector import LocaleDetector
-from .unicode import normalize_token
+from .unicode import _normalize_token_for_parsing, normalize_token
 from .validation import validate
 
 if TYPE_CHECKING:
@@ -66,7 +66,9 @@ def parse_number(token: str, detector: LocaleDetector | None = None) -> str | in
         raise ValueError(_NO_VALID_NUMBER_MSG)
 
     # Normalize the input token
-    normalized_token = normalize_token(_apply_accounting_negative_notation(token))
+    normalized_token = _normalize_token_for_parsing(
+        _apply_accounting_negative_notation(token)
+    )
 
     if not normalized_token:
         raise ValueError(_NO_VALID_NUMBER_MSG)

@@ -16,6 +16,12 @@ _SIGN_MAPPINGS = {
     "\u207a": "+",  # Superscript plus
     "\u208a": "+",  # Subscript plus
 }
+_HARD_BOUNDARY = chr(0)
+_BASIC_ALLOWED_CHARS = set("0123456789.,-+ '")
+_ARABIC_PUNCTUATION = {
+    "٬": "",  # Arabic thousands separator - remove (don't convert to comma)
+    "٫": ".",  # Arabic decimal separator - convert to period
+}
 
 
 def normalize_token(token: str) -> str:
@@ -42,6 +48,16 @@ def normalize_token(token: str) -> str:
         >>> normalize_token("５．２")
         '5.2'
     """
+    return _normalize_token(token, preserve_boundaries=False)
+
+
+def _normalize_token_for_parsing(token: str) -> str:
+    """Normalize a token while preserving hard boundaries for extraction."""
+    return _normalize_token(token, preserve_boundaries=True)
+
+
+def _normalize_token(token: str, *, preserve_boundaries: bool) -> str:
+    """Normalize a token, optionally preserving hard token boundaries."""
     if not token:
         return ""
 
@@ -52,59 +68,70 @@ def normalize_token(token: str) -> str:
     cleaned_input = "".join(char for char in normalized if char not in " \t\n\r")
     is_only_e_or_e = cleaned_input in ["e", "E", "eE", "Ee"]
 
-    # Step 3: Check which e/E characters are adjacent to digits
-    def is_adjacent_to_digit(text: str, index: int) -> bool:
-        """Check if character at index is adjacent to a digit."""
-        # Check previous character
-        if index > 0:
-            prev_char = text[index - 1]
-            if prev_char.isdigit():
-                return True
-
-        # Check next character
-        if index < len(text) - 1:
-            next_char = text[index + 1]
-            if next_char.isdigit():
-                return True
-
-        return False
-
     # Step 4: Build the result character by character
-    result = []
+    result: list[str] = []
 
-    # Basic allowed ASCII characters (without e and E for now)
-    basic_allowed_chars = set("0123456789.,-+ ")
+    def append_boundary() -> None:
+        if not result or result[-1] != _HARD_BOUNDARY:
+            result.append(_HARD_BOUNDARY)
 
-    # Arabic punctuation mappings
-    arabic_punctuation = {
-        "٬": "",  # Arabic thousands separator - remove (don't convert to comma)
-        "٫": ".",  # Arabic decimal separator - convert to period
-    }
-
-    for i, char in enumerate(normalized):
-        mapped_char = _SIGN_MAPPINGS.get(char, char)
-        if mapped_char in arabic_punctuation:
-            # Handle Arabic punctuation marks
-            result.append(arabic_punctuation[mapped_char])
-        elif mapped_char in basic_allowed_chars:
-            # ASCII digit or allowed punctuation - keep as is
-            result.append(mapped_char)
-        elif mapped_char in ["e", "E"]:
-            # Keep e and E only if they are adjacent to digits or input is only e/E
-            if is_only_e_or_e or is_adjacent_to_digit(normalized, i):
-                result.append(mapped_char)
-        elif unicodedata.category(mapped_char) == "Zs":
-            # Unicode space separator - replace with ASCII space
-            result.append(" ")
-        else:
-            # Try to convert Unicode digit to ASCII
-            digit_value = _try_get_unicode_digit(mapped_char)
-            if digit_value is not None:
-                result.append(str(digit_value))
-            # Not a digit and not an allowed character - skip it
+    for i in range(len(normalized)):
+        normalized_char = _normalize_char(normalized, i, is_only_e_or_e)
+        if normalized_char is None:
+            append_boundary()
+        elif normalized_char:
+            result.append(normalized_char)
 
     # Step 5: Post-process to handle spaces created by removing invalid characters
-    final_result = "".join(result)
+    return _finalize_normalized_result(
+        "".join(result), normalized, preserve_boundaries=preserve_boundaries
+    )
+
+
+def _normalize_char(text: str, index: int, is_only_e_or_e: bool) -> str | None:
+    """Return a normalized character, empty deletion, or None for a boundary."""
+    mapped_char = _SIGN_MAPPINGS.get(text[index], text[index])
+
+    if mapped_char in _ARABIC_PUNCTUATION:
+        normalized_char = _ARABIC_PUNCTUATION[mapped_char]
+    elif mapped_char in _BASIC_ALLOWED_CHARS:
+        normalized_char = mapped_char
+    elif mapped_char in ["e", "E"]:
+        if is_only_e_or_e or _is_adjacent_to_digit(text, index):
+            normalized_char = mapped_char
+        else:
+            normalized_char = None
+    else:
+        category = unicodedata.category(mapped_char)
+        if category == "Zs":
+            normalized_char = " "
+        elif category == "Sc":
+            normalized_char = ""
+        else:
+            digit_value = _try_get_unicode_digit(mapped_char)
+            normalized_char = str(digit_value) if digit_value is not None else None
+
+    return normalized_char
+
+
+def _is_adjacent_to_digit(text: str, index: int) -> bool:
+    """Check if character at index is adjacent to a digit."""
+    if index > 0 and text[index - 1].isdigit():
+        return True
+
+    return index < len(text) - 1 and text[index + 1].isdigit()
+
+
+def _finalize_normalized_result(
+    text: str, normalized: str, *, preserve_boundaries: bool
+) -> str:
+    """Collapse boundaries, preserve requested marker visibility, and trim."""
+    final_result = _collapse_token_boundaries(text)
+
+    if preserve_boundaries:
+        final_result = final_result.strip(_HARD_BOUNDARY)
+    else:
+        final_result = final_result.replace(_HARD_BOUNDARY, " ")
 
     # Check if we need to collapse spaces created by removing invalid characters
     # This is a heuristic: if the original input had no consecutive spaces,
@@ -127,7 +154,29 @@ def normalize_token(token: str) -> str:
     if not original_has_trailing_space and final_result.endswith(" "):
         final_result = final_result.rstrip(" ")
 
+    if not preserve_boundaries:
+        final_result = _restore_outer_spaces(final_result, normalized)
+
     return final_result
+
+
+def _restore_outer_spaces(text: str, normalized: str) -> str:
+    """Preserve caller-provided leading and trailing spaces in public output."""
+    leading_spaces = len(normalized) - len(normalized.lstrip(" "))
+    trailing_spaces = len(normalized) - len(normalized.rstrip(" "))
+
+    if leading_spaces > 0 and text.startswith(" "):
+        text = " " * leading_spaces + text.lstrip(" ")
+    if trailing_spaces > 0 and text.endswith(" "):
+        text = text.rstrip(" ") + " " * trailing_spaces
+
+    return text
+
+
+def _collapse_token_boundaries(text: str) -> str:
+    """Collapse boundary runs and surrounding spaces into one hard boundary."""
+    boundary = re.escape(_HARD_BOUNDARY)
+    return re.sub(rf"(?: *{boundary}+ *)+", _HARD_BOUNDARY, text)
 
 
 def _try_get_unicode_digit(char: str) -> int | None:

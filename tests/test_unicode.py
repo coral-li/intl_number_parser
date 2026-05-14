@@ -125,7 +125,15 @@ class TestNormalizeToken:
         """Dash punctuation should not be canonicalized as numeric signs."""
         assert normalize_token("–123.45") == "123.45"
         assert normalize_token("—123.45") == "123.45"
-        assert normalize_token("2019–2020") == "20192020"
+        assert normalize_token("2019–2020") == "2019 2020"
+
+    def test_normalize_token_should_not_join_digits_across_unsupported_chars(self):
+        """Unsupported in-token characters should become public boundaries."""
+        assert normalize_token("1/2") == "1 2"
+        assert normalize_token("1⁄2") == "1 2"
+        assert normalize_token("½") == "1 2"
+        assert normalize_token("1a2") == "1 2"
+        assert normalize_token("1@2") == "1 2"
 
     def test_normalize_token_scientific_notation(self):
         """Test scientific notation normalization."""
@@ -151,7 +159,7 @@ class TestNormalizeToken:
 
         # Test with symbols
         result = normalize_token("123@#$%^&*()456")
-        assert result == "123456"
+        assert result == "123 456"
 
     def test_normalize_token_empty_string(self):
         """Test empty string input."""
@@ -209,14 +217,14 @@ class TestNormalizeToken:
         # Test with characters from different Unicode categories
         # but only keeps the allowed ones
         mixed_input = "123α456β789γ"
-        assert normalize_token(mixed_input) == "123456789"
+        assert normalize_token(mixed_input) == "123 456 789"
 
         # Test with currency symbols
         assert normalize_token("$123.45€") == "123.45"
 
         # Test with mathematical symbols
         assert normalize_token("123+456-789") == "123+456-789"
-        assert normalize_token("123×456÷789") == "123456789"
+        assert normalize_token("123×456÷789") == "123 456 789"
 
     def test_normalize_token_performance_characteristics(self):
         """Test that the function works with long strings (O(n) requirement)."""
@@ -332,7 +340,7 @@ class TestNormalizeToken:
         # but would have them after character removal
         assert normalize_token("1 a b 2") == "1 2"
         # Has consecutive spaces originally
-        assert normalize_token("1  a  b  2") == "1      2"
+        assert normalize_token("1  a  b  2") == "1 2"
         assert normalize_token("1 abc 2") == "1 2"
         assert normalize_token("1 xyz 2") == "1 2"
 

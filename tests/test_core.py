@@ -326,6 +326,26 @@ class TestParseNumberEmbeddedInText:
         assert result == "1.23e8"
         assert isinstance(result, str)
 
+    def test_should_not_join_digits_across_unsupported_in_token_chars(self):
+        """Unsupported characters inside a token should split numeric runs."""
+        assert parse_number("1/2") == 1
+        assert parse_number("1⁄2") == 1
+        assert parse_number("½") == 1
+        assert parse_number("1a2") == 1
+        assert parse_number("2019–2020") == 2019
+
+    def test_should_not_join_numbers_across_removed_text_boundaries(self):
+        """Removed text between numbers should not become a thousands separator."""
+        assert parse_number("123 abc 345") == 123
+        assert parse_number("abc 123 def 456") == 123
+        assert parse_number("abc 12 def 345") == 12
+
+    def test_should_still_parse_real_space_thousands(self):
+        """Actual spaces in numeric groups should keep existing thousands behavior."""
+        assert parse_number("1 234") == 1234
+        assert parse_number("12 345") == 12345
+        assert parse_number("1 234 567") == 1234567
+
 
 class TestParseNumberEdgeCases:
     """Test edge cases and error handling."""
