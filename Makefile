@@ -15,11 +15,12 @@ CYAN := \033[0;36m
 WHITE := \033[0;37m
 RESET := \033[0m
 
-# Python and pip commands
-PYTHON := python3
-PIP := pip3
-PYTEST := pytest
-COVERAGE := coverage
+# Python and dependency commands
+UV := uv
+UV_RUN := $(UV) run --locked --extra dev
+PYTHON := $(UV_RUN) python
+PYTEST := $(UV_RUN) pytest
+COVERAGE := $(UV_RUN) coverage
 
 # Project directories
 SRC_DIR := intl_number_parser
@@ -63,18 +64,18 @@ help: ## Show this help message
 
 install: ## Setup - Install package in development mode
 	@echo "$(CYAN)Installing package in development mode...$(RESET)"
-	$(PIP) install -e .
+	$(UV) sync --locked
 
 install-dev: ## Setup - Install package with development dependencies
 	@echo "$(CYAN)Installing package with development dependencies...$(RESET)"
-	$(PIP) install -e ".[dev]"
+	$(UV) sync --locked --extra dev
 
 install-all: install-dev setup-pre-commit ## Setup - Complete development setup
 
 setup-pre-commit: ## Setup - Install and configure pre-commit hooks
 	@echo "$(CYAN)Setting up pre-commit hooks...$(RESET)"
-	pre-commit install
-	pre-commit install --hook-type commit-msg
+	$(UV_RUN) pre-commit install
+	$(UV_RUN) pre-commit install --hook-type commit-msg
 
 # ============================================================================
 # Development
@@ -85,8 +86,8 @@ dev: install-dev setup-pre-commit ## Development - Quick setup for development
 
 upgrade: ## Development - Upgrade all dependencies
 	@echo "$(CYAN)Upgrading dependencies...$(RESET)"
-	$(PIP) install --upgrade pip setuptools wheel
-	$(PIP) install --upgrade -e ".[dev]"
+	$(UV) lock --upgrade
+	$(UV) sync --locked --extra dev
 
 # ============================================================================
 # Code Quality
@@ -94,27 +95,27 @@ upgrade: ## Development - Upgrade all dependencies
 
 format: ## Code Quality - Format code with ruff
 	@echo "$(CYAN)Formatting code with ruff...$(RESET)"
-	ruff format .
+	$(UV_RUN) ruff format .
 
 lint: ## Code Quality - Run linter (ruff)
 	@echo "$(CYAN)Running linter...$(RESET)"
-	ruff check .
+	$(UV_RUN) ruff check .
 
 lint-fix: ## Code Quality - Run linter and fix issues
 	@echo "$(CYAN)Running linter with fixes...$(RESET)"
-	ruff check . --fix
+	$(UV_RUN) ruff check . --fix
 
 typecheck: ## Code Quality - Run type checker (mypy)
 	@echo "$(CYAN)Running type checker...$(RESET)"
-	mypy $(SRC_DIR)
+	$(UV_RUN) mypy $(SRC_DIR)
 
 security: ## Code Quality - Run security scanner (bandit)
 	@echo "$(CYAN)Running security scanner...$(RESET)"
-	bandit -r $(SRC_DIR)
+	$(UV_RUN) bandit -r $(SRC_DIR)
 
 safety: ## Code Quality - Check for known security vulnerabilities
 	@echo "$(CYAN)Checking for known vulnerabilities...$(RESET)"
-	safety check
+	$(UV_RUN) safety check
 
 check: lint typecheck security ## Code Quality - Run all code quality checks
 
@@ -122,7 +123,7 @@ check-all: lint typecheck security safety ## Code Quality - Run all checks inclu
 
 pre-commit: ## Code Quality - Run pre-commit hooks manually
 	@echo "$(CYAN)Running pre-commit hooks...$(RESET)"
-	pre-commit run --all-files
+	$(UV_RUN) pre-commit run --all-files
 
 # ============================================================================
 # Testing
@@ -177,7 +178,7 @@ docs: ## Documentation - Build documentation
 	fi
 	@if [ ! -f "$(DOCS_DIR)/conf.py" ]; then \
 		echo "$(YELLOW)Initializing Sphinx documentation...$(RESET)"; \
-		cd $(DOCS_DIR) && sphinx-quickstart -q -p "International Number Parser" -a "Team" -v "0.1.0" --ext-autodoc --ext-viewcode --makefile --no-batchfile .; \
+		cd $(DOCS_DIR) && $(UV_RUN) sphinx-quickstart -q -p "International Number Parser" -a "Team" -v "0.1.0" --ext-autodoc --ext-viewcode --makefile --no-batchfile .; \
 	fi
 	cd $(DOCS_DIR) && make html
 
@@ -197,25 +198,25 @@ docs-clean: ## Documentation - Clean documentation build
 
 build: clean ## Build - Build distribution packages
 	@echo "$(CYAN)Building distribution packages...$(RESET)"
-	$(PYTHON) -m build
+	$(UV_RUN) python -m build
 
 build-wheel: clean ## Build - Build wheel package only
 	@echo "$(CYAN)Building wheel package...$(RESET)"
-	$(PYTHON) -m build --wheel
+	$(UV_RUN) python -m build --wheel
 
 build-sdist: clean ## Build - Build source distribution only
 	@echo "$(CYAN)Building source distribution...$(RESET)"
-	$(PYTHON) -m build --sdist
+	$(UV_RUN) python -m build --sdist
 
 upload-test: build ## Build - Upload to TestPyPI
 	@echo "$(CYAN)Uploading to TestPyPI...$(RESET)"
-	twine upload --repository testpypi dist/*
+	$(UV_RUN) twine upload --repository testpypi dist/*
 
 upload: build ## Build - Upload to PyPI
 	@echo "$(RED)Uploading to PyPI...$(RESET)"
 	@echo "$(YELLOW)Are you sure? This will publish to production PyPI!$(RESET)"
 	@read -p "Press Enter to continue or Ctrl+C to abort..."
-	twine upload dist/*
+	$(UV_RUN) twine upload dist/*
 
 # ============================================================================
 # Maintenance
@@ -230,6 +231,7 @@ clean: ## Maintenance - Clean build artifacts
 	rm -rf .mypy_cache/
 	rm -rf .ruff_cache/
 	rm -rf .coverage
+	rm -rf coverage.xml
 	rm -rf htmlcov/
 	rm -rf .tox/
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
@@ -240,7 +242,7 @@ clean-all: clean docs-clean ## Maintenance - Clean all artifacts including docs
 
 reset: clean-all ## Maintenance - Reset to clean state
 	@echo "$(CYAN)Resetting to clean state...$(RESET)"
-	$(PIP) uninstall -y intl-number-parser
+	$(UV) pip uninstall intl-number-parser
 	rm -rf .venv/
 
 # ============================================================================
@@ -251,12 +253,12 @@ profile: ## Development - Profile code with py-spy
 	@echo "$(CYAN)Profiling code...$(RESET)"
 	@echo "$(YELLOW)Run your code in another terminal, then press Enter$(RESET)"
 	@read -p "Press Enter to start profiling..."
-	py-spy record -o profile.svg -- $(PYTHON) -m pytest $(TEST_DIR)
+	$(UV_RUN) py-spy record -o profile.svg -- python -m pytest $(TEST_DIR)
 
 memory-profile: ## Development - Profile memory usage with memray
 	@echo "$(CYAN)Profiling memory usage...$(RESET)"
-	memray run -o memory-profile.bin $(PYTHON) -m pytest $(TEST_DIR)
-	memray flamegraph memory-profile.bin
+	$(UV_RUN) memray run -o memory-profile.bin -m pytest $(TEST_DIR)
+	$(UV_RUN) memray flamegraph memory-profile.bin
 
 # ============================================================================
 # CI/CD Helpers
@@ -286,5 +288,5 @@ status: ## Development - Show project status
 	@echo "$(YELLOW)Virtual environment:$(RESET) $(shell echo $$VIRTUAL_ENV)"
 	@echo "$(YELLOW)Git branch:$(RESET) $(shell git branch --show-current 2>/dev/null || echo 'Not in git repo')"
 	@echo "$(YELLOW)Git status:$(RESET) $(shell git status --porcelain 2>/dev/null | wc -l | tr -d ' ') files changed"
-	@echo "$(YELLOW)Package installed:$(RESET) $(shell $(PIP) show intl-number-parser >/dev/null 2>&1 && echo 'Yes' || echo 'No')"
-	@echo "$(YELLOW)Pre-commit installed:$(RESET) $(shell pre-commit --version >/dev/null 2>&1 && echo 'Yes' || echo 'No')" 
+	@echo "$(YELLOW)Package installed:$(RESET) $(shell $(UV) pip show intl-number-parser >/dev/null 2>&1 && echo 'Yes' || echo 'No')"
+	@echo "$(YELLOW)Pre-commit installed:$(RESET) $(shell $(UV_RUN) pre-commit --version >/dev/null 2>&1 && echo 'Yes' || echo 'No')"

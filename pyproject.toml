@@ -39,7 +39,8 @@ pandas = [
 dev = [
     # Core development tools
     "ruff>=0.12.0",
-    "mypy>=1.10.0",
+    # Keep mypy on a line that accepts the configured Python 3.8 target.
+    "mypy>=1.10.0,<1.17.0",
     "pre-commit>=3.0.0",
 
     # Testing
@@ -79,6 +80,11 @@ Homepage = "https://github.com/yourusername/intl-number-parser"
 Repository = "https://github.com/yourusername/intl-number-parser"
 Documentation = "https://intl-number-parser.readthedocs.io/"
 Issues = "https://github.com/yourusername/intl-number-parser/issues"
+
+[tool.uv]
+# Delay dependency resolution for newly published packages to reduce exposure
+# to compromised or malicious releases.
+exclude-newer = "7 days"
 
 # ============================================================================
 # Ruff Configuration (replaces black, isort, flake8, and more)
@@ -179,7 +185,6 @@ ignore = [
     "Q002",    # Docstring contains escape sequence (handled by formatter)
     "Q003",    # Change outer quotes to avoid escaping inner quotes (handled by formatter)
 
-    "PD901",   # pandas-vet: df is a bad variable name (too restrictive for this project)
     "RUF001",  # String contains ambiguous Unicode character (intentional)
 ]
 

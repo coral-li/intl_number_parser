@@ -143,7 +143,7 @@ def parse_series(
     if detector is None:
         # Create detector and train it on all valid values for accurate detection
         detector = LocaleDetector()
-        valid_values = str_series[~na_mask]
+        valid_values = cast("pd.Series", str_series.loc[~na_mask])
 
         # Train detector with representative evidence from the full series.
         sample_values = _select_detection_sample(valid_values, sample_size)
@@ -152,8 +152,8 @@ def parse_series(
             detector.ingest(str(value))
 
     # Get valid indices and values
-    valid_indices = np.where(~na_mask)[0]
-    valid_values = str_series.iloc[valid_indices]
+    valid_indices: np.ndarray = np.where(~na_mask)[0]
+    valid_values = cast("pd.Series", str_series.iloc[valid_indices])
 
     if dtype == _FLOAT64_DTYPE:
         return _parse_series_float64(series, valid_indices, valid_values, detector)
@@ -179,7 +179,7 @@ def _parse_series_float64(
     detector: LocaleDetector,
 ) -> pd.Series:
     """Parse valid values into a backwards-compatible float64 Series."""
-    result_values = np.full(len(series), np.nan, dtype=np.float64)
+    result_values: np.ndarray = np.full(len(series), np.nan, dtype=np.float64)
     if len(valid_values) > 0:
         parsed_values = _vectorized_parse(valid_values, detector)
         result_values[valid_indices] = parsed_values
@@ -196,7 +196,7 @@ def _parse_series_preserve(
     detector: LocaleDetector,
 ) -> pd.Series:
     """Parse valid values while preserving parse_number return values."""
-    result_values = np.full(len(series), pd.NA, dtype=object)
+    result_values: np.ndarray = np.full(len(series), pd.NA, dtype=object)
     if len(valid_values) > 0:
         parsed_values = _vectorized_parse_preserve(valid_values, detector)
         result_values[valid_indices] = parsed_values
