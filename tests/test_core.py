@@ -1,5 +1,7 @@
 """Test cases for the core parsing module."""
 
+import re
+
 import pytest
 
 from intl_number_parser.candidates import LocaleCandidate
@@ -7,10 +9,13 @@ from intl_number_parser.core import (
     _apply_precision_constraints,
     _build_number_pattern,
     _extract_number_from_text,
+    _extract_scientific_notation_linear,
     _extract_with_candidate,
     _extract_with_fallback_patterns,
+    _has_invalid_repeated_separator_group,
     _is_potential_decimal_separator,
     _is_valid_number_format,
+    _is_valid_thousands_pattern_text,
     _normalize_canonical_number,
     _parse_mantissa_to_canonical,
     _parse_to_canonical,
@@ -1156,3 +1161,61 @@ class TestMissingCoverageCompleteTarget:
         assert _normalize_canonical_number("123.") == "123.0"
         assert _normalize_canonical_number("-123.") == "-123.0"
         assert _normalize_canonical_number("+123.") == "123.0"
+
+
+class TestSecurityRegressionDoS:
+    """Regression tests for parser denial-of-service mitigations."""
+
+    def test_should_validate_digit_only_text_without_regex_search(self, monkeypatch):
+        """Long digit-only input should not enter regex-based format checks."""
+
+        def fail_search(*_args, **_kwargs):
+            msg = "digit-only format validation should not use re.search"
+            raise AssertionError(msg)
+
+        monkeypatch.setattr(re, "search", fail_search)
+
+        assert _is_valid_number_format("1" * 50_000) is True
+
+    def test_should_not_use_scientific_fallback_regex(self, monkeypatch):
+        """Malformed scientific input should not hit the old fallback regex."""
+        original_finditer = re.finditer
+
+        def guarded_finditer(pattern, text):
+            if pattern.startswith(r"[+-]?(?:\d+(?:[,") and "[eE]" in pattern:
+                msg = "fallback scientific notation should be parsed linearly"
+                raise AssertionError(msg)
+            return original_finditer(pattern, text)
+
+        monkeypatch.setattr(re, "finditer", guarded_finditer)
+
+        payload = ("1" * 100) + "e" + ("+" * 100)
+        assert parse_number(payload) == "1" * 100
+
+    def test_should_keep_valid_scientific_fallback_behavior(self):
+        """Linear scientific fallback should preserve valid scientific matches."""
+        assert _extract_with_fallback_patterns("value +1.23e-4") == "+1.23e-4"
+        assert _extract_with_fallback_patterns("value .5E+2") == ".5E+2"
+        assert _extract_with_fallback_patterns("value 1,234e5") == "1,234e5"
+        assert _extract_with_fallback_patterns("value 1 234e5") == "1 234e5"
+        assert _extract_with_fallback_patterns("value 1'234.56E+7") == "1'234.56E+7"
+        assert _extract_with_fallback_patterns("value 1\u00a0234e5") == "1\u00a0234e5"
+
+    def test_should_handle_non_scientific_scanner_edges(self):
+        """Linear scanner should skip invalid starts and malformed exponents."""
+        assert _extract_scientific_notation_linear("+") is None
+        assert _extract_scientific_notation_linear("+abc") is None
+        assert _extract_scientific_notation_linear(".e10") is None
+        assert _extract_scientific_notation_linear("1e+") is None
+        assert _extract_scientific_notation_linear("123 text") is None
+
+    def test_should_preserve_repeated_separator_validation_edges(self):
+        """Linear separator validation should preserve existing edge behavior."""
+        assert _has_invalid_repeated_separator_group(".1.23", ".", 2) is False
+        assert _has_invalid_repeated_separator_group("1.a.2", ".", 2) is False
+        assert _has_invalid_repeated_separator_group("1.23.a", ".", 2) is False
+        assert _is_valid_thousands_pattern_text("1234.567", ".") is False
+        assert _is_valid_thousands_pattern_text("1.234", ".") is True
+        assert _is_valid_thousands_pattern_text("1.234x", ".") is False
+        assert _is_valid_thousands_pattern_text("1.234.", ".") is False
+        assert _is_valid_thousands_pattern_text("1.234.56", ".") is True
