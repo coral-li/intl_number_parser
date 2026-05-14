@@ -751,6 +751,22 @@ class TestMissingCoverageExtractFallback:
         result = _extract_with_fallback_patterns("European 1.234,56 and US 1,234.56")
         assert result == "1.234"
 
+    def test_should_return_earliest_fallback_match_across_pattern_priorities(self):
+        """Fallback extraction should prefer earliest position over pattern priority."""
+        result = _extract_with_fallback_patterns("ID 7 amount 1,234.56")
+        assert result == "7"
+
+        parsed = parse_number("ID 7 amount 1,234.56")
+        assert parsed == 7
+
+    def test_should_return_earliest_match_before_later_scientific_notation(self):
+        """Later scientific notation should not outrank an earlier number."""
+        result = _extract_with_fallback_patterns("row 12 total .5E+2")
+        assert result == "12"
+
+        parsed = parse_number("row 12 total .5E+2")
+        assert parsed == 12
+
     def test_should_handle_fallback_patterns_no_matches(self):
         """Test fallback patterns when no matches are found."""
         # Text with no numbers

@@ -365,9 +365,9 @@ def _extract_with_fallback_patterns(text: str) -> str | None:
     Returns:
         First valid number string or None
     """
-    scientific_number = _extract_scientific_notation_linear(text)
-    if scientific_number is not None:
-        return scientific_number
+    best_match: tuple[int, str] | None = None
+    for scientific_match in _iter_scientific_notation_matches(text):
+        best_match = _earlier_fallback_match(best_match, scientific_match)
 
     # Simple patterns for basic number formats (most permissive)
     fallback_patterns = [
@@ -395,25 +395,42 @@ def _extract_with_fallback_patterns(text: str) -> str | None:
 
     for pattern in fallback_patterns:
         matches = re.finditer(pattern, text)
-        for match in matches:
-            # Return first match found
-            return match.group(0)
+        for regex_match in matches:
+            best_match = _earlier_fallback_match(
+                best_match, (regex_match.start(), regex_match.group(0))
+            )
 
-    return None
+    return best_match[1] if best_match is not None else None
 
 
-def _extract_scientific_notation_linear(text: str) -> str | None:
-    """Extract basic scientific notation without a backtracking regex."""
+def _earlier_fallback_match(
+    current: tuple[int, str] | None, candidate: tuple[int, str]
+) -> tuple[int, str]:
+    """Return the match with the earlier start; preserve priority on ties."""
+    if current is None or candidate[0] < current[0]:
+        return candidate
+    return current
+
+
+def _iter_scientific_notation_matches(text: str) -> list[tuple[int, str]]:
+    """Extract scientific notation matches without a backtracking regex."""
+    matches: list[tuple[int, str]] = []
     text_length = len(text)
     index = 0
 
     while index < text_length:
         scientific_number, next_index = _scan_scientific_candidate(text, index)
         if scientific_number is not None:
-            return scientific_number
+            matches.append((index, scientific_number))
         index = next_index
 
-    return None
+    return matches
+
+
+def _extract_scientific_notation_linear(text: str) -> str | None:
+    """Extract basic scientific notation without a backtracking regex."""
+    matches = _iter_scientific_notation_matches(text)
+    return matches[0][1] if matches else None
 
 
 def _scan_scientific_candidate(text: str, start: int) -> tuple[str | None, int]:
