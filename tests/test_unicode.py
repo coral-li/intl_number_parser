@@ -112,6 +112,21 @@ class TestNormalizeToken:
         # Minus with Arabic-Indic
         assert normalize_token("-١٢٣.٤٥") == "-123.45"
 
+    def test_normalize_token_unicode_sign_canonicalization(self):
+        """Unicode sign characters should normalize to ASCII signs."""
+        assert normalize_token("−123.45") == "-123.45"
+        assert normalize_token("⁻123.45") == "-123.45"
+        assert normalize_token("₋123.45") == "-123.45"
+        assert normalize_token("⁺123.45") == "+123.45"
+        assert normalize_token("₊123.45") == "+123.45"
+        assert normalize_token("−١٢٣٫٤٥") == "-123.45"
+
+    def test_normalize_token_should_not_treat_dash_punctuation_as_signs(self):
+        """Dash punctuation should not be canonicalized as numeric signs."""
+        assert normalize_token("–123.45") == "123.45"
+        assert normalize_token("—123.45") == "123.45"
+        assert normalize_token("2019–2020") == "20192020"
+
     def test_normalize_token_scientific_notation(self):
         """Test scientific notation normalization."""
         # Basic scientific notation

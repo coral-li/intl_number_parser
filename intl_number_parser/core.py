@@ -7,6 +7,7 @@ from any international number format to canonical Python numeric values.
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import TYPE_CHECKING
 
 from .detector import LocaleDetector
@@ -26,6 +27,9 @@ _NO_VALID_NUMBER_MSG = "No valid number found in token"
 _SCIENTIFIC_NOTATION_PARTS = 2
 _THOUSANDS_GROUP_SIZE = 3
 _REPEATED_SEPARATOR_COUNT = 2
+_ACCOUNTING_FRACTIONAL_DIGITS = 2
+_ACCOUNTING_PARENTHESES_PATTERN = re.compile(r"\(([^()]*)\)")
+_CURRENCY_SYMBOL_CATEGORY = "Sc"
 
 
 def parse_number(token: str, detector: LocaleDetector | None = None) -> str | int:
@@ -62,7 +66,7 @@ def parse_number(token: str, detector: LocaleDetector | None = None) -> str | in
         raise ValueError(_NO_VALID_NUMBER_MSG)
 
     # Normalize the input token
-    normalized_token = normalize_token(token)
+    normalized_token = normalize_token(_apply_accounting_negative_notation(token))
 
     if not normalized_token:
         raise ValueError(_NO_VALID_NUMBER_MSG)
@@ -84,6 +88,94 @@ def parse_number(token: str, detector: LocaleDetector | None = None) -> str | in
 
     # Apply precision constraints
     return _apply_precision_constraints(canonical_number)
+
+
+def _apply_accounting_negative_notation(token: str) -> str:
+    """Convert clear accounting-negative parenthesized spans to signed spans."""
+    normalized = unicodedata.normalize("NFKC", token)
+    if "(" not in normalized or ")" not in normalized:
+        return normalized
+
+    result: list[str] = []
+    last_end = 0
+    for match in _ACCOUNTING_PARENTHESES_PATTERN.finditer(normalized):
+        result.append(normalized[last_end : match.start()])
+        inner = match.group(1)
+        if _is_accounting_negative_span(normalized, match.start(), match.end(), inner):
+            result.append(f"-{inner.strip()}")
+        else:
+            result.append(match.group(0))
+        last_end = match.end()
+
+    result.append(normalized[last_end:])
+    return "".join(result)
+
+
+def _is_accounting_negative_span(text: str, start: int, end: int, inner: str) -> bool:
+    """Return True when a parenthesized span clearly represents a negative number."""
+    stripped_inner = inner.strip()
+    if not stripped_inner:
+        return False
+
+    normalized_inner = normalize_token(stripped_inner).strip()
+    if not normalized_inner or not any(char.isdigit() for char in normalized_inner):
+        return False
+
+    if normalized_inner[0] in "+-":
+        return False
+
+    if _span_covers_entire_token(text, start, end):
+        return True
+
+    return _contains_currency_symbol(stripped_inner) or _has_accounting_number_shape(
+        normalized_inner
+    )
+
+
+def _span_covers_entire_token(text: str, start: int, end: int) -> bool:
+    """Return True when the parenthesized span is the whole token."""
+    return not text[:start].strip() and not text[end:].strip()
+
+
+def _contains_currency_symbol(text: str) -> bool:
+    """Return True when text contains a Unicode currency symbol."""
+    return any(unicodedata.category(char) == _CURRENCY_SYMBOL_CATEGORY for char in text)
+
+
+def _has_accounting_number_shape(normalized_text: str) -> bool:
+    """Return True for embedded amount-like accounting numbers."""
+    return _has_accounting_thousands_group(
+        normalized_text
+    ) or _has_accounting_decimal_amount(normalized_text)
+
+
+def _has_accounting_thousands_group(normalized_text: str) -> bool:
+    """Return True when text has a valid thousands-grouped number shape."""
+    for separator in (",", ".", " ", "'"):
+        if separator in normalized_text and _is_valid_thousands_pattern_text(
+            normalized_text, separator
+        ):
+            return True
+    return False
+
+
+def _has_accounting_decimal_amount(normalized_text: str) -> bool:
+    """Return True for decimal amounts with two fractional digits."""
+    for separator in (".", ","):
+        separator_position = normalized_text.rfind(separator)
+        if separator_position == -1:
+            continue
+
+        fractional_part = normalized_text[separator_position + 1 :]
+        integer_part = normalized_text[:separator_position]
+        if (
+            len(fractional_part) == _ACCOUNTING_FRACTIONAL_DIGITS
+            and fractional_part.isdigit()
+            and any(char.isdigit() for char in integer_part)
+        ):
+            return True
+
+    return False
 
 
 def _is_valid_number_format(text: str) -> bool:

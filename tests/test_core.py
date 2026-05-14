@@ -111,6 +111,59 @@ class TestParseNumberSigns:
         assert result == "123.45"
         assert isinstance(result, str)
 
+    def test_should_parse_unicode_minus_signs_as_negative(self):
+        """Unicode minus signs should preserve negative numeric semantics."""
+        assert parse_number("−123.45") == "-123.45"
+        assert parse_number("⁻123.45") == "-123.45"
+        assert parse_number("₋123.45") == "-123.45"
+        assert parse_number("−١٢٣٫٤٥") == "-123.45"
+
+    def test_should_parse_unicode_plus_signs_as_positive(self):
+        """Unicode plus signs should preserve positive numeric semantics."""
+        assert parse_number("⁺123.45") == "123.45"
+        assert parse_number("₊123.45") == "123.45"
+
+    def test_should_not_treat_dash_punctuation_as_negative_signs(self):
+        """Dash punctuation should not become numeric minus signs."""
+        assert parse_number("–123.45") == "123.45"
+        assert parse_number("—123.45") == "123.45"
+
+
+class TestParseNumberAccountingNegatives:
+    """Test conservative accounting-negative parsing."""
+
+    def test_should_parse_standalone_parenthesized_numbers_as_negative(self):
+        """Whole-token parenthesized numbers should parse as accounting negatives."""
+        assert parse_number("(123)") == -123
+        assert parse_number("(123.45)") == "-123.45"
+        assert parse_number("(1,234.56)") == "-1234.56"
+        assert parse_number("(1.234,56)") == "-1234.56"
+
+    def test_should_parse_currency_parenthesized_numbers_as_negative(self):
+        """Currency-bearing parenthesized numbers should parse as negatives."""
+        assert parse_number("($123)") == -123
+        assert parse_number("($1,234.56)") == "-1234.56"
+        assert parse_number("(€1.234,56)") == "-1234.56"
+        assert parse_number("(£1 234.56)") == "-1234.56"
+        assert parse_number("(¥1,234)") == -1234
+
+    def test_should_parse_embedded_clear_accounting_numbers_as_negative(self):
+        """Embedded accounting spans should retain their negative sign."""
+        assert parse_number("Balance: ($1,234.56)") == "-1234.56"
+        assert parse_number("Adjustment (123.45)") == "-123.45"
+        assert parse_number("Adjustment (1,234)") == -1234
+
+    def test_should_not_treat_plain_parenthetical_references_as_accounting(self):
+        """Embedded plain integers in parentheses should remain ordinary numbers."""
+        assert parse_number("Reference (123)") == 123
+        assert parse_number("Invoice (2024)") == 2024
+        assert parse_number("Version (1)") == 1
+        assert parse_number("Chapter (1.2)") == "1.2"
+
+    def test_should_parse_first_accounting_span_before_later_numbers(self):
+        """An accounting span before other numbers should be extracted first."""
+        assert parse_number("A (123.45) B 67") == "-123.45"
+
 
 class TestParseNumberScientificNotation:
     """Test scientific notation parsing."""

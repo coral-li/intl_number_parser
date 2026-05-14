@@ -9,6 +9,14 @@ from __future__ import annotations
 import re
 import unicodedata
 
+_SIGN_MAPPINGS = {
+    "\u2212": "-",  # Minus sign
+    "\u207b": "-",  # Superscript minus
+    "\u208b": "-",  # Subscript minus
+    "\u207a": "+",  # Superscript plus
+    "\u208a": "+",  # Subscript plus
+}
+
 
 def normalize_token(token: str) -> str:
     """Convert any numeric token into a canonical ASCII representation.
@@ -74,22 +82,23 @@ def normalize_token(token: str) -> str:
     }
 
     for i, char in enumerate(normalized):
-        if char in arabic_punctuation:
+        mapped_char = _SIGN_MAPPINGS.get(char, char)
+        if mapped_char in arabic_punctuation:
             # Handle Arabic punctuation marks
-            result.append(arabic_punctuation[char])
-        elif char in basic_allowed_chars:
+            result.append(arabic_punctuation[mapped_char])
+        elif mapped_char in basic_allowed_chars:
             # ASCII digit or allowed punctuation - keep as is
-            result.append(char)
-        elif char in ["e", "E"]:
+            result.append(mapped_char)
+        elif mapped_char in ["e", "E"]:
             # Keep e and E only if they are adjacent to digits or input is only e/E
             if is_only_e_or_e or is_adjacent_to_digit(normalized, i):
-                result.append(char)
-        elif unicodedata.category(char) == "Zs":
+                result.append(mapped_char)
+        elif unicodedata.category(mapped_char) == "Zs":
             # Unicode space separator - replace with ASCII space
             result.append(" ")
         else:
             # Try to convert Unicode digit to ASCII
-            digit_value = _try_get_unicode_digit(char)
+            digit_value = _try_get_unicode_digit(mapped_char)
             if digit_value is not None:
                 result.append(str(digit_value))
             # Not a digit and not an allowed character - skip it

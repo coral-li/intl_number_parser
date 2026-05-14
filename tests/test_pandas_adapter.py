@@ -18,6 +18,7 @@ import intl_number_parser.pandas_adapter
 from intl_number_parser.detector import LocaleDetector
 from intl_number_parser.pandas_adapter import (
     _check_pandas_available,
+    _select_detection_sample,
     _vectorized_parse,
     parse_series,
 )
@@ -304,9 +305,9 @@ class TestParseSeriesIntegration:
 class TestPandasAdapterCoverage:
     """Target specific uncovered lines in pandas_adapter.py."""
 
-    def test_parse_series_large_dataset_strategic_sampling(self):
-        """Test the strategic sampling for large datasets (>30 values)."""
-        # Create a dataset with >30 values to trigger strategic sampling
+    def test_parse_series_large_dataset_representative_sampling(self):
+        """Test representative sampling for larger datasets."""
+        # Create a dataset large enough to exercise detector sampling
         values = [f"{1000 + i:,}" for i in range(40)]  # 40 values: 1,000 to 1,039
         series = pd.Series(values)
 
@@ -317,6 +318,43 @@ class TestPandasAdapterCoverage:
         assert not result.isna().any()
         assert result.iloc[0] == 1000.0  # First value
         assert result.iloc[-1] == 1039.0  # Last value
+
+    def test_parse_series_sampling_should_resist_head_tail_locale_poisoning(self):
+        """Representative sampling should not over-trust head and tail rows."""
+        row_count = 1000
+        old_sampled_positions = set(range(20))
+        old_sampled_positions.update(range(20, row_count - 10, row_count // 10))
+        old_sampled_positions.update(range(row_count - 10, row_count))
+
+        values = [
+            "1,234.56" if index in old_sampled_positions else "1.234,56"
+            for index in range(row_count)
+        ]
+        series = pd.Series(values)
+
+        result = parse_series(series, sample_size=101)
+
+        assert (result == 1234.56).sum() > 900
+
+    def test_detection_sample_should_span_full_series_evenly(self):
+        """Detection sampling should be deterministic and spread across rows."""
+        series = pd.Series([str(index) for index in range(1000)])
+
+        sample = _select_detection_sample(series, sample_size=11)
+
+        assert len(sample) == 11
+        assert sample.index[0] == 0
+        assert sample.index[-1] == 999
+        assert sample.index[1] > 20
+        assert sample.index[-2] < 990
+
+    def test_detection_sample_should_use_all_values_within_sample_size(self):
+        """Datasets within the sample bound should train on all valid rows."""
+        series = pd.Series([str(index) for index in range(60)])
+
+        sample = _select_detection_sample(series, sample_size=200)
+
+        pd.testing.assert_series_equal(sample, series)
 
     def test_parse_series_empty_valid_values_branch(self):
         """Test branch where all values are NA/invalid."""

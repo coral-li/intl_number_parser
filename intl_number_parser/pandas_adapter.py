@@ -6,7 +6,7 @@ vectorized parsing of pandas Series containing international number formats.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 try:
     import numpy as np
@@ -33,9 +33,8 @@ if TYPE_CHECKING:
 from .core import parse_number
 from .detector import LocaleDetector
 
-# Constants for dataset sampling thresholds
-_SMALL_DATASET_THRESHOLD = 50
-_LARGE_DATASET_THRESHOLD = 30
+# Constants for dataset sampling
+_DEFAULT_DETECTION_SAMPLE_SIZE = 200
 
 # Error message for missing pandas
 _PANDAS_ERROR_MSG = (
@@ -51,7 +50,10 @@ def _check_pandas_available() -> None:
 
 
 def parse_series(
-    series: pd.Series, detector: LocaleDetector | None = None
+    series: pd.Series,
+    detector: LocaleDetector | None = None,
+    *,
+    sample_size: int = _DEFAULT_DETECTION_SAMPLE_SIZE,
 ) -> pd.Series:
     """Parse a pandas Series of international number strings to numeric values.
 
@@ -64,6 +66,9 @@ def parse_series(
         detector: Optional LocaleDetector for format detection. If None,
                  creates a temporary detector for autodetection based on
                  the series data.
+        sample_size: Maximum number of valid values to sample when training
+                     an automatic detector. Sampling is deterministic and
+                     evenly distributed across the series.
 
     Returns:
         pandas Series with float64 dtype containing parsed numeric values.
@@ -102,6 +107,9 @@ def parse_series(
         Designed to parse 10,000 values in under 0.5 seconds.
     """
     _check_pandas_available()
+    if sample_size < 1:
+        msg = "sample_size must be at least 1"
+        raise ValueError(msg)
 
     # Handle empty series
     if len(series) == 0:
@@ -125,23 +133,8 @@ def parse_series(
         detector = LocaleDetector()
         valid_values = str_series[~na_mask]
 
-        # Train detector with all valid values to get sufficient evidence
-        # For better performance on large datasets, use intelligent sampling
-        if len(valid_values) <= _SMALL_DATASET_THRESHOLD:
-            # Small dataset: use all values for accurate detection
-            sample_values = valid_values
-        else:
-            # Large dataset: use strategic sampling to ensure coverage
-            # Take first 20, last 10, and every 10th in between
-            indices = list(range(min(20, len(valid_values))))
-            if len(valid_values) > _LARGE_DATASET_THRESHOLD:
-                step = max(10, len(valid_values) // 10)
-                indices.extend(range(20, len(valid_values) - 10, step))
-                indices.extend(
-                    range(max(20, len(valid_values) - 10), len(valid_values))
-                )
-            sample_indices = np.array(sorted(set(indices)))
-            sample_values = valid_values.iloc[sample_indices]
+        # Train detector with representative evidence from the full series.
+        sample_values = _select_detection_sample(valid_values, sample_size)
 
         for value in sample_values:
             detector.ingest(str(value))
@@ -163,6 +156,17 @@ def parse_series(
     return pd.Series(
         result_values, index=series.index, name=series.name, dtype=np.float64
     )
+
+
+def _select_detection_sample(valid_values: pd.Series, sample_size: int) -> pd.Series:
+    """Select deterministic, evenly distributed values for detector training."""
+    if len(valid_values) <= sample_size:
+        return valid_values
+
+    sample_indices = np.linspace(0, len(valid_values) - 1, sample_size, dtype=int)
+    sample_indices = np.unique(sample_indices)
+    sample = valid_values.iloc[sample_indices]
+    return cast("pd.Series", sample)
 
 
 def _vectorized_parse(str_series: pd.Series, detector: LocaleDetector) -> np.ndarray:
