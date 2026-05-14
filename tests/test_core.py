@@ -258,6 +258,40 @@ class TestParseNumberWithDetector:
         assert result == "123.45"
         assert isinstance(result, str)
 
+    def test_should_infer_candidate_for_comma_thousands_fallback(self):
+        """Fallback parsing should not reinterpret comma-thousands as decimal."""
+        detector = LocaleDetector()
+        for candidate in detector.candidates:
+            candidate.score = -1
+
+        result = parse_number("1,234", detector)
+
+        assert result == 1234
+        assert isinstance(result, int)
+
+    def test_should_preserve_comma_decimal_when_detector_provides_context(self):
+        """Explicit comma-decimal context keeps ambiguous values decimal."""
+        detector = LocaleDetector()
+        detector.freeze(
+            LocaleCandidate(decimal=",", thousands=".", group_size=3, score=0)
+        )
+
+        result = parse_number("1,234", detector)
+
+        assert result == "1.234"
+        assert isinstance(result, str)
+
+    def test_should_keep_comma_decimal_fallback_for_non_thousands_shape(self):
+        """Fallback should still treat non-thousands comma values as decimals."""
+        detector = LocaleDetector()
+        for candidate in detector.candidates:
+            candidate.score = -1
+
+        result = parse_number("1,23", detector)
+
+        assert result == "1.23"
+        assert isinstance(result, str)
+
     def test_should_work_without_detector(self):
         """parse_number should work with per-token detection when no detector given."""
         result = parse_number("1,234.56")
@@ -745,11 +779,22 @@ class TestMissingCoverageExtractFallback:
         result = _extract_with_fallback_patterns("Price $123.45 and $678.90")
         assert result == "123.45"
 
-        # Text with mixed formats - the patterns are ordered by priority
-        # and the simpler decimal pattern matches "1.234" before the full
-        # European pattern can match "1.234,56"
+        # Same-start matches should use the longest match before falling back
+        # to pattern priority.
         result = _extract_with_fallback_patterns("European 1.234,56 and US 1,234.56")
-        assert result == "1.234"
+        assert result == "1.234,56"
+
+    def test_should_return_longest_same_start_fallback_match(self):
+        """Fallback extraction should not truncate grouped integers."""
+        result = _extract_with_fallback_patterns("1,234,567")
+        assert result == "1,234,567"
+
+        detector = LocaleDetector()
+        for candidate in detector.candidates:
+            candidate.score = -1
+
+        parsed = parse_number("1,234,567", detector)
+        assert parsed == 1234567
 
     def test_should_return_earliest_fallback_match_across_pattern_priorities(self):
         """Fallback extraction should prefer earliest position over pattern priority."""

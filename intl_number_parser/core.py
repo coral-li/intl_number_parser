@@ -325,8 +325,7 @@ def _extract_number_from_text(
     # Fallback: try all common patterns if candidate-based extraction fails
     fallback_number = _extract_with_fallback_patterns(text)
     if fallback_number is not None:
-        # For fallback, we don't have a specific candidate, return None
-        return (fallback_number, None)
+        return (fallback_number, _infer_fallback_candidate(fallback_number))
 
     return None
 
@@ -406,10 +405,19 @@ def _extract_with_fallback_patterns(text: str) -> str | None:
 def _earlier_fallback_match(
     current: tuple[int, str] | None, candidate: tuple[int, str]
 ) -> tuple[int, str]:
-    """Return the match with the earlier start; preserve priority on ties."""
+    """Return the earlier match, preferring longer same-start matches."""
     if current is None or candidate[0] < current[0]:
         return candidate
+    if candidate[0] == current[0] and len(candidate[1]) > len(current[1]):
+        return candidate
     return current
+
+
+def _infer_fallback_candidate(number_str: str) -> LocaleCandidate | None:
+    """Infer parse context for a fallback-extracted number."""
+    detector = LocaleDetector()
+    detector.ingest(number_str)
+    return detector.best_candidate
 
 
 def _iter_scientific_notation_matches(text: str) -> list[tuple[int, str]]:
