@@ -7,10 +7,11 @@ from any international number format to canonical Python numeric values.
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import TYPE_CHECKING
 
 from .detector import LocaleDetector
-from .unicode import normalize_token
+from .unicode import _normalize_token_for_parsing, normalize_token
 from .validation import validate
 
 if TYPE_CHECKING:
@@ -25,6 +26,10 @@ _NO_VALID_NUMBER_MSG = "No valid number found in token"
 # Constants for magic numbers
 _SCIENTIFIC_NOTATION_PARTS = 2
 _THOUSANDS_GROUP_SIZE = 3
+_REPEATED_SEPARATOR_COUNT = 2
+_ACCOUNTING_FRACTIONAL_DIGITS = 2
+_ACCOUNTING_PARENTHESES_PATTERN = re.compile(r"\(([^()]*)\)")
+_CURRENCY_SYMBOL_CATEGORY = "Sc"
 
 
 def parse_number(token: str, detector: LocaleDetector | None = None) -> str | int:
@@ -61,7 +66,9 @@ def parse_number(token: str, detector: LocaleDetector | None = None) -> str | in
         raise ValueError(_NO_VALID_NUMBER_MSG)
 
     # Normalize the input token
-    normalized_token = normalize_token(token)
+    normalized_token = _normalize_token_for_parsing(
+        _apply_accounting_negative_notation(token)
+    )
 
     if not normalized_token:
         raise ValueError(_NO_VALID_NUMBER_MSG)
@@ -85,6 +92,94 @@ def parse_number(token: str, detector: LocaleDetector | None = None) -> str | in
     return _apply_precision_constraints(canonical_number)
 
 
+def _apply_accounting_negative_notation(token: str) -> str:
+    """Convert clear accounting-negative parenthesized spans to signed spans."""
+    normalized = unicodedata.normalize("NFKC", token)
+    if "(" not in normalized or ")" not in normalized:
+        return normalized
+
+    result: list[str] = []
+    last_end = 0
+    for match in _ACCOUNTING_PARENTHESES_PATTERN.finditer(normalized):
+        result.append(normalized[last_end : match.start()])
+        inner = match.group(1)
+        if _is_accounting_negative_span(normalized, match.start(), match.end(), inner):
+            result.append(f"-{inner.strip()}")
+        else:
+            result.append(match.group(0))
+        last_end = match.end()
+
+    result.append(normalized[last_end:])
+    return "".join(result)
+
+
+def _is_accounting_negative_span(text: str, start: int, end: int, inner: str) -> bool:
+    """Return True when a parenthesized span clearly represents a negative number."""
+    stripped_inner = inner.strip()
+    if not stripped_inner:
+        return False
+
+    normalized_inner = normalize_token(stripped_inner).strip()
+    if not normalized_inner or not any(char.isdigit() for char in normalized_inner):
+        return False
+
+    if normalized_inner[0] in "+-":
+        return False
+
+    if _span_covers_entire_token(text, start, end):
+        return True
+
+    return _contains_currency_symbol(stripped_inner) or _has_accounting_number_shape(
+        normalized_inner
+    )
+
+
+def _span_covers_entire_token(text: str, start: int, end: int) -> bool:
+    """Return True when the parenthesized span is the whole token."""
+    return not text[:start].strip() and not text[end:].strip()
+
+
+def _contains_currency_symbol(text: str) -> bool:
+    """Return True when text contains a Unicode currency symbol."""
+    return any(unicodedata.category(char) == _CURRENCY_SYMBOL_CATEGORY for char in text)
+
+
+def _has_accounting_number_shape(normalized_text: str) -> bool:
+    """Return True for embedded amount-like accounting numbers."""
+    return _has_accounting_thousands_group(
+        normalized_text
+    ) or _has_accounting_decimal_amount(normalized_text)
+
+
+def _has_accounting_thousands_group(normalized_text: str) -> bool:
+    """Return True when text has a valid thousands-grouped number shape."""
+    for separator in (",", ".", " ", "'"):
+        if separator in normalized_text and _is_valid_thousands_pattern_text(
+            normalized_text, separator
+        ):
+            return True
+    return False
+
+
+def _has_accounting_decimal_amount(normalized_text: str) -> bool:
+    """Return True for decimal amounts with two fractional digits."""
+    for separator in (".", ","):
+        separator_position = normalized_text.rfind(separator)
+        if separator_position == -1:
+            continue
+
+        fractional_part = normalized_text[separator_position + 1 :]
+        integer_part = normalized_text[:separator_position]
+        if (
+            len(fractional_part) == _ACCOUNTING_FRACTIONAL_DIGITS
+            and fractional_part.isdigit()
+            and any(char.isdigit() for char in integer_part)
+        ):
+            return True
+
+    return False
+
+
 def _is_valid_number_format(text: str) -> bool:
     """Validate that text doesn't contain obvious invalid number patterns.
 
@@ -99,17 +194,25 @@ def _is_valid_number_format(text: str) -> bool:
     # 1. Consecutive separators like ".." or ",,"
     # 2. Multiple decimal points that are clearly not thousands separators
 
-    # Patterns for clearly invalid formats (consecutive separators)
-    invalid_patterns = [
-        r"\.\.",  # .. (consecutive periods)
-        r",,",  # ,, (consecutive commas)
-        r"\.,",  # ., (mixed consecutive)
-        r",\.",  # ,. (mixed consecutive)
-    ]
+    period_count = 0
+    comma_count = 0
+    previous_char = ""
+    for char in text:
+        if char == ".":
+            period_count += 1
+            if previous_char in (".", ","):
+                return False
+        elif char == ",":
+            comma_count += 1
+            if previous_char in (".", ","):
+                return False
+        previous_char = char
 
-    for pattern in invalid_patterns:
-        if re.search(pattern, text):
-            return False
+    if (
+        period_count < _REPEATED_SEPARATOR_COUNT
+        and comma_count < _REPEATED_SEPARATOR_COUNT
+    ):
+        return True
 
     # Check for multiple decimal indicators in same number
     # This is more complex as we need to distinguish thousands from decimals
@@ -118,26 +221,80 @@ def _is_valid_number_format(text: str) -> bool:
     # A decimal point is likely if it's followed by 1-2 digits (not 3)
     # Thousands separators are typically followed by exactly 3 digits
 
-    # Pattern for potential multiple decimals: X.Y.Z where Y and Z
-    # are not exactly 3 digits
-    decimal_like_pattern = r"\d+\.(?:\d{1,2}|\d{4,})\.\d+"
-    if re.search(decimal_like_pattern, text):
-        # Additional check: ensure this isn't a valid thousands pattern
-        # Valid: 1.234.567 (periods separate groups of 3)
-        # Invalid: 1.23.45 or 1.2345.67
-        thousands_pattern = r"\d{1,3}(?:\.\d{3})+(?:[,\.]\d+)?$"
-        if not re.match(thousands_pattern, text.strip()):
-            return False
+    return not (
+        _has_invalid_repeated_separator_group(text, ".", period_count)
+        or _has_invalid_repeated_separator_group(text, ",", comma_count)
+    )
 
-    # Similar check for comma patterns
-    comma_decimal_pattern = r"\d+,(?:\d{1,2}|\d{4,}),\d+"
-    if re.search(comma_decimal_pattern, text):
-        # Check if it's a valid thousands pattern with commas
-        comma_thousands_pattern = r"\d{1,3}(?:,\d{3})+(?:[,\.]\d+)?$"
-        if not re.match(comma_thousands_pattern, text.strip()):
-            return False
 
-    return True
+def _has_invalid_repeated_separator_group(
+    text: str, separator: str, separator_count: int
+) -> bool:
+    """Return True when repeated separators cannot be valid thousands groups."""
+    if separator_count < _REPEATED_SEPARATOR_COUNT:
+        return False
+
+    separator_positions = [
+        index for index, char in enumerate(text) if char == separator
+    ]
+    for left_pos, right_pos in zip(separator_positions, separator_positions[1:]):
+        if left_pos == 0 or right_pos >= len(text) - 1:
+            continue
+
+        middle_group = text[left_pos + 1 : right_pos]
+        if not middle_group or not middle_group.isdigit():
+            continue
+
+        if not (text[left_pos - 1].isdigit() and text[right_pos + 1].isdigit()):
+            continue
+
+        if len(middle_group) != _THOUSANDS_GROUP_SIZE:
+            return not _is_valid_thousands_pattern_text(text.strip(), separator)
+
+    return False
+
+
+def _is_valid_thousands_pattern_text(text: str, separator: str) -> bool:
+    """Check the historical thousands pattern shape without regex backtracking."""
+    position = 0
+    text_length = len(text)
+
+    first_group_start = position
+    while position < text_length and text[position].isdigit():
+        position += 1
+
+    first_group_size = position - first_group_start
+    if not 1 <= first_group_size <= _THOUSANDS_GROUP_SIZE:
+        return False
+
+    thousands_groups = 0
+    while position < text_length and text[position] == separator:
+        group_start = position + 1
+        group_end = group_start
+        while group_end < text_length and text[group_end].isdigit():
+            group_end += 1
+
+        if group_end - group_start != _THOUSANDS_GROUP_SIZE:
+            break
+
+        thousands_groups += 1
+        position = group_end
+
+    if thousands_groups == 0:
+        return False
+
+    if position == text_length:
+        return True
+
+    if text[position] not in ",.":
+        return False
+
+    position += 1
+    decimal_start = position
+    while position < text_length and text[position].isdigit():
+        position += 1
+
+    return position > decimal_start and position == text_length
 
 
 def _extract_number_from_text(
@@ -170,8 +327,7 @@ def _extract_number_from_text(
     # Fallback: try all common patterns if candidate-based extraction fails
     fallback_number = _extract_with_fallback_patterns(text)
     if fallback_number is not None:
-        # For fallback, we don't have a specific candidate, return None
-        return (fallback_number, None)
+        return (fallback_number, _infer_fallback_candidate(fallback_number))
 
     return None
 
@@ -210,10 +366,12 @@ def _extract_with_fallback_patterns(text: str) -> str | None:
     Returns:
         First valid number string or None
     """
+    best_match: tuple[int, str] | None = None
+    for scientific_match in _iter_scientific_notation_matches(text):
+        best_match = _earlier_fallback_match(best_match, scientific_match)
+
     # Simple patterns for basic number formats (most permissive)
     fallback_patterns = [
-        # Scientific notation (highest priority)
-        r"[+-]?(?:\d+(?:[,\s\'\u00a0]\d{3})*\.?\d*|\.\d+)[eE][+-]?\d+",
         # Decimal numbers with thousands separators - US format: 1,234.56
         r"[+-]?\d{1,3}(?:,[0-9]{3})*\.[0-9]+",
         # Decimal numbers with thousands separators - EU format: 1.234,56
@@ -238,11 +396,158 @@ def _extract_with_fallback_patterns(text: str) -> str | None:
 
     for pattern in fallback_patterns:
         matches = re.finditer(pattern, text)
-        for match in matches:
-            # Return first match found
-            return match.group(0)
+        for regex_match in matches:
+            best_match = _earlier_fallback_match(
+                best_match, (regex_match.start(), regex_match.group(0))
+            )
+
+    return best_match[1] if best_match is not None else None
+
+
+def _earlier_fallback_match(
+    current: tuple[int, str] | None, candidate: tuple[int, str]
+) -> tuple[int, str]:
+    """Return the earlier match, preferring longer same-start matches."""
+    if current is None or candidate[0] < current[0]:
+        return candidate
+    if candidate[0] == current[0] and len(candidate[1]) > len(current[1]):
+        return candidate
+    return current
+
+
+def _infer_fallback_candidate(number_str: str) -> LocaleCandidate | None:
+    """Infer parse context for a fallback-extracted number."""
+    detector = LocaleDetector()
+    detector.ingest(number_str)
+    return detector.best_candidate
+
+
+def _iter_scientific_notation_matches(text: str) -> list[tuple[int, str]]:
+    """Extract scientific notation matches without a backtracking regex."""
+    matches: list[tuple[int, str]] = []
+    text_length = len(text)
+    index = 0
+
+    while index < text_length:
+        scientific_number, next_index = _scan_scientific_candidate(text, index)
+        if scientific_number is not None:
+            matches.append((index, scientific_number))
+        index = next_index
+
+    return matches
+
+
+def _extract_scientific_notation_linear(text: str) -> str | None:
+    """Extract basic scientific notation without a backtracking regex."""
+    matches = _iter_scientific_notation_matches(text)
+    return matches[0][1] if matches else None
+
+
+def _scan_scientific_candidate(text: str, start: int) -> tuple[str | None, int]:
+    """Scan one possible scientific notation candidate from start."""
+    next_index = start + 1
+
+    index = _consume_scientific_prefix(text, start)
+    if index is None:
+        return None, next_index
+
+    index, digits_seen = _consume_scientific_mantissa(text, index)
+
+    if digits_seen == 0:
+        return None, next_index
+
+    if index >= len(text) or text[index] not in "eE":
+        return None, max(index, next_index)
+
+    exponent_index = _consume_scientific_exponent(text, index)
+    if exponent_index is None:
+        return None, index + 1
+
+    return text[start:exponent_index], exponent_index
+
+
+def _consume_scientific_prefix(text: str, start: int) -> int | None:
+    """Return the mantissa start after an optional sign, or None."""
+    if text[start] in "+-":
+        next_index = start + 1
+        if next_index >= len(text):
+            return None
+        if text[next_index].isdigit() or text[next_index] == ".":
+            return next_index
+        return None
+
+    if text[start].isdigit() or text[start] == ".":
+        return start
 
     return None
+
+
+def _consume_scientific_mantissa(text: str, start: int) -> tuple[int, int]:
+    """Consume a basic period-decimal mantissa and count its digits."""
+    text_length = len(text)
+    index = start
+    digits_seen = 0
+
+    if text[index] == ".":
+        index += 1
+        while index < text_length and text[index].isdigit():
+            index += 1
+            digits_seen += 1
+        return index, digits_seen
+
+    while index < text_length and text[index].isdigit():
+        index += 1
+        digits_seen += 1
+
+    while _has_scientific_group(text, index):
+        index += 1
+        group_end = index + _THOUSANDS_GROUP_SIZE
+        digits_seen += _THOUSANDS_GROUP_SIZE
+        index = group_end
+
+    if index < text_length and text[index] == ".":
+        index += 1
+        while index < text_length and text[index].isdigit():
+            index += 1
+            digits_seen += 1
+    else:
+        while index < text_length and text[index].isdigit():
+            index += 1
+            digits_seen += 1
+
+    return index, digits_seen
+
+
+def _has_scientific_group(text: str, index: int) -> bool:
+    """Return True when index starts an old-regex-compatible thousands group."""
+    if index >= len(text) or not _is_scientific_group_separator(text[index]):
+        return False
+
+    group_start = index + 1
+    group_end = group_start + _THOUSANDS_GROUP_SIZE
+    return group_end <= len(text) and text[group_start:group_end].isdigit()
+
+
+def _is_scientific_group_separator(char: str) -> bool:
+    """Return True for group separators accepted by the old scientific regex."""
+    return char in {",", "'", "\u00a0"} or char.isspace()
+
+
+def _consume_scientific_exponent(text: str, marker_index: int) -> int | None:
+    """Return the end index after a valid exponent, or None."""
+    text_length = len(text)
+    exponent_index = marker_index + 1
+    if exponent_index < text_length and text[exponent_index] in "+-":
+        exponent_index += 1
+
+    exponent_start = exponent_index
+    while exponent_index < text_length and text[exponent_index].isdigit():
+        exponent_index += 1
+
+    if exponent_index == exponent_start:
+        return None
+
+    return exponent_index
 
 
 def _build_number_pattern(candidate: LocaleCandidate) -> str:

@@ -1,5 +1,7 @@
 """Test cases for the core parsing module."""
 
+import re
+
 import pytest
 
 from intl_number_parser.candidates import LocaleCandidate
@@ -7,10 +9,13 @@ from intl_number_parser.core import (
     _apply_precision_constraints,
     _build_number_pattern,
     _extract_number_from_text,
+    _extract_scientific_notation_linear,
     _extract_with_candidate,
     _extract_with_fallback_patterns,
+    _has_invalid_repeated_separator_group,
     _is_potential_decimal_separator,
     _is_valid_number_format,
+    _is_valid_thousands_pattern_text,
     _normalize_canonical_number,
     _parse_mantissa_to_canonical,
     _parse_to_canonical,
@@ -106,6 +111,59 @@ class TestParseNumberSigns:
         assert result == "123.45"
         assert isinstance(result, str)
 
+    def test_should_parse_unicode_minus_signs_as_negative(self):
+        """Unicode minus signs should preserve negative numeric semantics."""
+        assert parse_number("−123.45") == "-123.45"
+        assert parse_number("⁻123.45") == "-123.45"
+        assert parse_number("₋123.45") == "-123.45"
+        assert parse_number("−١٢٣٫٤٥") == "-123.45"
+
+    def test_should_parse_unicode_plus_signs_as_positive(self):
+        """Unicode plus signs should preserve positive numeric semantics."""
+        assert parse_number("⁺123.45") == "123.45"
+        assert parse_number("₊123.45") == "123.45"
+
+    def test_should_not_treat_dash_punctuation_as_negative_signs(self):
+        """Dash punctuation should not become numeric minus signs."""
+        assert parse_number("–123.45") == "123.45"
+        assert parse_number("—123.45") == "123.45"
+
+
+class TestParseNumberAccountingNegatives:
+    """Test conservative accounting-negative parsing."""
+
+    def test_should_parse_standalone_parenthesized_numbers_as_negative(self):
+        """Whole-token parenthesized numbers should parse as accounting negatives."""
+        assert parse_number("(123)") == -123
+        assert parse_number("(123.45)") == "-123.45"
+        assert parse_number("(1,234.56)") == "-1234.56"
+        assert parse_number("(1.234,56)") == "-1234.56"
+
+    def test_should_parse_currency_parenthesized_numbers_as_negative(self):
+        """Currency-bearing parenthesized numbers should parse as negatives."""
+        assert parse_number("($123)") == -123
+        assert parse_number("($1,234.56)") == "-1234.56"
+        assert parse_number("(€1.234,56)") == "-1234.56"
+        assert parse_number("(£1 234.56)") == "-1234.56"
+        assert parse_number("(¥1,234)") == -1234
+
+    def test_should_parse_embedded_clear_accounting_numbers_as_negative(self):
+        """Embedded accounting spans should retain their negative sign."""
+        assert parse_number("Balance: ($1,234.56)") == "-1234.56"
+        assert parse_number("Adjustment (123.45)") == "-123.45"
+        assert parse_number("Adjustment (1,234)") == -1234
+
+    def test_should_not_treat_plain_parenthetical_references_as_accounting(self):
+        """Embedded plain integers in parentheses should remain ordinary numbers."""
+        assert parse_number("Reference (123)") == 123
+        assert parse_number("Invoice (2024)") == 2024
+        assert parse_number("Version (1)") == 1
+        assert parse_number("Chapter (1.2)") == "1.2"
+
+    def test_should_parse_first_accounting_span_before_later_numbers(self):
+        """An accounting span before other numbers should be extracted first."""
+        assert parse_number("A (123.45) B 67") == "-123.45"
+
 
 class TestParseNumberScientificNotation:
     """Test scientific notation parsing."""
@@ -200,6 +258,40 @@ class TestParseNumberWithDetector:
         assert result == "123.45"
         assert isinstance(result, str)
 
+    def test_should_infer_candidate_for_comma_thousands_fallback(self):
+        """Fallback parsing should not reinterpret comma-thousands as decimal."""
+        detector = LocaleDetector()
+        for candidate in detector.candidates:
+            candidate.score = -1
+
+        result = parse_number("1,234", detector)
+
+        assert result == 1234
+        assert isinstance(result, int)
+
+    def test_should_preserve_comma_decimal_when_detector_provides_context(self):
+        """Explicit comma-decimal context keeps ambiguous values decimal."""
+        detector = LocaleDetector()
+        detector.freeze(
+            LocaleCandidate(decimal=",", thousands=".", group_size=3, score=0)
+        )
+
+        result = parse_number("1,234", detector)
+
+        assert result == "1.234"
+        assert isinstance(result, str)
+
+    def test_should_keep_comma_decimal_fallback_for_non_thousands_shape(self):
+        """Fallback should still treat non-thousands comma values as decimals."""
+        detector = LocaleDetector()
+        for candidate in detector.candidates:
+            candidate.score = -1
+
+        result = parse_number("1,23", detector)
+
+        assert result == "1.23"
+        assert isinstance(result, str)
+
     def test_should_work_without_detector(self):
         """parse_number should work with per-token detection when no detector given."""
         result = parse_number("1,234.56")
@@ -233,6 +325,26 @@ class TestParseNumberEmbeddedInText:
         result = parse_number("The distance is 1.23e8 meters")
         assert result == "1.23e8"
         assert isinstance(result, str)
+
+    def test_should_not_join_digits_across_unsupported_in_token_chars(self):
+        """Unsupported characters inside a token should split numeric runs."""
+        assert parse_number("1/2") == 1
+        assert parse_number("1⁄2") == 1
+        assert parse_number("½") == 1
+        assert parse_number("1a2") == 1
+        assert parse_number("2019–2020") == 2019
+
+    def test_should_not_join_numbers_across_removed_text_boundaries(self):
+        """Removed text between numbers should not become a thousands separator."""
+        assert parse_number("123 abc 345") == 123
+        assert parse_number("abc 123 def 456") == 123
+        assert parse_number("abc 12 def 345") == 12
+
+    def test_should_still_parse_real_space_thousands(self):
+        """Actual spaces in numeric groups should keep existing thousands behavior."""
+        assert parse_number("1 234") == 1234
+        assert parse_number("12 345") == 12345
+        assert parse_number("1 234 567") == 1234567
 
 
 class TestParseNumberEdgeCases:
@@ -687,11 +799,38 @@ class TestMissingCoverageExtractFallback:
         result = _extract_with_fallback_patterns("Price $123.45 and $678.90")
         assert result == "123.45"
 
-        # Text with mixed formats - the patterns are ordered by priority
-        # and the simpler decimal pattern matches "1.234" before the full
-        # European pattern can match "1.234,56"
+        # Same-start matches should use the longest match before falling back
+        # to pattern priority.
         result = _extract_with_fallback_patterns("European 1.234,56 and US 1,234.56")
-        assert result == "1.234"
+        assert result == "1.234,56"
+
+    def test_should_return_longest_same_start_fallback_match(self):
+        """Fallback extraction should not truncate grouped integers."""
+        result = _extract_with_fallback_patterns("1,234,567")
+        assert result == "1,234,567"
+
+        detector = LocaleDetector()
+        for candidate in detector.candidates:
+            candidate.score = -1
+
+        parsed = parse_number("1,234,567", detector)
+        assert parsed == 1234567
+
+    def test_should_return_earliest_fallback_match_across_pattern_priorities(self):
+        """Fallback extraction should prefer earliest position over pattern priority."""
+        result = _extract_with_fallback_patterns("ID 7 amount 1,234.56")
+        assert result == "7"
+
+        parsed = parse_number("ID 7 amount 1,234.56")
+        assert parsed == 7
+
+    def test_should_return_earliest_match_before_later_scientific_notation(self):
+        """Later scientific notation should not outrank an earlier number."""
+        result = _extract_with_fallback_patterns("row 12 total .5E+2")
+        assert result == "12"
+
+        parsed = parse_number("row 12 total .5E+2")
+        assert parsed == 12
 
     def test_should_handle_fallback_patterns_no_matches(self):
         """Test fallback patterns when no matches are found."""
@@ -1156,3 +1295,61 @@ class TestMissingCoverageCompleteTarget:
         assert _normalize_canonical_number("123.") == "123.0"
         assert _normalize_canonical_number("-123.") == "-123.0"
         assert _normalize_canonical_number("+123.") == "123.0"
+
+
+class TestSecurityRegressionDoS:
+    """Regression tests for parser denial-of-service mitigations."""
+
+    def test_should_validate_digit_only_text_without_regex_search(self, monkeypatch):
+        """Long digit-only input should not enter regex-based format checks."""
+
+        def fail_search(*_args, **_kwargs):
+            msg = "digit-only format validation should not use re.search"
+            raise AssertionError(msg)
+
+        monkeypatch.setattr(re, "search", fail_search)
+
+        assert _is_valid_number_format("1" * 50_000) is True
+
+    def test_should_not_use_scientific_fallback_regex(self, monkeypatch):
+        """Malformed scientific input should not hit the old fallback regex."""
+        original_finditer = re.finditer
+
+        def guarded_finditer(pattern, text):
+            if pattern.startswith(r"[+-]?(?:\d+(?:[,") and "[eE]" in pattern:
+                msg = "fallback scientific notation should be parsed linearly"
+                raise AssertionError(msg)
+            return original_finditer(pattern, text)
+
+        monkeypatch.setattr(re, "finditer", guarded_finditer)
+
+        payload = ("1" * 100) + "e" + ("+" * 100)
+        assert parse_number(payload) == "1" * 100
+
+    def test_should_keep_valid_scientific_fallback_behavior(self):
+        """Linear scientific fallback should preserve valid scientific matches."""
+        assert _extract_with_fallback_patterns("value +1.23e-4") == "+1.23e-4"
+        assert _extract_with_fallback_patterns("value .5E+2") == ".5E+2"
+        assert _extract_with_fallback_patterns("value 1,234e5") == "1,234e5"
+        assert _extract_with_fallback_patterns("value 1 234e5") == "1 234e5"
+        assert _extract_with_fallback_patterns("value 1'234.56E+7") == "1'234.56E+7"
+        assert _extract_with_fallback_patterns("value 1\u00a0234e5") == "1\u00a0234e5"
+
+    def test_should_handle_non_scientific_scanner_edges(self):
+        """Linear scanner should skip invalid starts and malformed exponents."""
+        assert _extract_scientific_notation_linear("+") is None
+        assert _extract_scientific_notation_linear("+abc") is None
+        assert _extract_scientific_notation_linear(".e10") is None
+        assert _extract_scientific_notation_linear("1e+") is None
+        assert _extract_scientific_notation_linear("123 text") is None
+
+    def test_should_preserve_repeated_separator_validation_edges(self):
+        """Linear separator validation should preserve existing edge behavior."""
+        assert _has_invalid_repeated_separator_group(".1.23", ".", 2) is False
+        assert _has_invalid_repeated_separator_group("1.a.2", ".", 2) is False
+        assert _has_invalid_repeated_separator_group("1.23.a", ".", 2) is False
+        assert _is_valid_thousands_pattern_text("1234.567", ".") is False
+        assert _is_valid_thousands_pattern_text("1.234", ".") is True
+        assert _is_valid_thousands_pattern_text("1.234x", ".") is False
+        assert _is_valid_thousands_pattern_text("1.234.", ".") is False
+        assert _is_valid_thousands_pattern_text("1.234.56", ".") is True

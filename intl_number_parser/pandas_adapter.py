@@ -6,7 +6,7 @@ vectorized parsing of pandas Series containing international number formats.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 try:
     import numpy as np
@@ -33,9 +33,12 @@ if TYPE_CHECKING:
 from .core import parse_number
 from .detector import LocaleDetector
 
-# Constants for dataset sampling thresholds
-_SMALL_DATASET_THRESHOLD = 50
-_LARGE_DATASET_THRESHOLD = 30
+# Constants for dataset sampling
+_DEFAULT_DETECTION_SAMPLE_SIZE = 200
+_FLOAT64_DTYPE = "float64"
+_PRESERVE_DTYPE = "preserve"
+_OBJECT_DTYPE = "object"
+_SUPPORTED_DTYPES = {_FLOAT64_DTYPE, _PRESERVE_DTYPE, _OBJECT_DTYPE}
 
 # Error message for missing pandas
 _PANDAS_ERROR_MSG = (
@@ -51,7 +54,11 @@ def _check_pandas_available() -> None:
 
 
 def parse_series(
-    series: pd.Series, detector: LocaleDetector | None = None
+    series: pd.Series,
+    detector: LocaleDetector | None = None,
+    *,
+    sample_size: int = _DEFAULT_DETECTION_SAMPLE_SIZE,
+    dtype: str = _FLOAT64_DTYPE,
 ) -> pd.Series:
     """Parse a pandas Series of international number strings to numeric values.
 
@@ -64,6 +71,12 @@ def parse_series(
         detector: Optional LocaleDetector for format detection. If None,
                  creates a temporary detector for autodetection based on
                  the series data.
+        sample_size: Maximum number of valid values to sample when training
+                     an automatic detector. Sampling is deterministic and
+                     evenly distributed across the series.
+        dtype: Output dtype mode. Use "float64" for the backwards-compatible
+               numeric Series, or "preserve"/"object" to keep exact
+               parse_number return values without float conversion.
 
     Returns:
         pandas Series with float64 dtype containing parsed numeric values.
@@ -102,10 +115,17 @@ def parse_series(
         Designed to parse 10,000 values in under 0.5 seconds.
     """
     _check_pandas_available()
+    if sample_size < 1:
+        msg = "sample_size must be at least 1"
+        raise ValueError(msg)
+    if dtype not in _SUPPORTED_DTYPES:
+        msg = f"dtype must be one of {sorted(_SUPPORTED_DTYPES)}"
+        raise ValueError(msg)
 
     # Handle empty series
     if len(series) == 0:
-        return pd.Series([], dtype=np.float64, index=series.index, name=series.name)
+        empty_dtype = np.float64 if dtype == _FLOAT64_DTYPE else object
+        return pd.Series([], dtype=empty_dtype, index=series.index, name=series.name)
 
     # Convert to string and handle NA values vectorially
     str_series = series.astype(str)
@@ -123,46 +143,65 @@ def parse_series(
     if detector is None:
         # Create detector and train it on all valid values for accurate detection
         detector = LocaleDetector()
-        valid_values = str_series[~na_mask]
+        valid_values = cast("pd.Series", str_series.loc[~na_mask])
 
-        # Train detector with all valid values to get sufficient evidence
-        # For better performance on large datasets, use intelligent sampling
-        if len(valid_values) <= _SMALL_DATASET_THRESHOLD:
-            # Small dataset: use all values for accurate detection
-            sample_values = valid_values
-        else:
-            # Large dataset: use strategic sampling to ensure coverage
-            # Take first 20, last 10, and every 10th in between
-            indices = list(range(min(20, len(valid_values))))
-            if len(valid_values) > _LARGE_DATASET_THRESHOLD:
-                step = max(10, len(valid_values) // 10)
-                indices.extend(range(20, len(valid_values) - 10, step))
-                indices.extend(
-                    range(max(20, len(valid_values) - 10), len(valid_values))
-                )
-            sample_indices = np.array(sorted(set(indices)))
-            sample_values = valid_values.iloc[sample_indices]
+        # Train detector with representative evidence from the full series.
+        sample_values = _select_detection_sample(valid_values, sample_size)
 
         for value in sample_values:
             detector.ingest(str(value))
 
-    # Initialize result array with NaN
-    result_values = np.full(len(series), np.nan, dtype=np.float64)
-
     # Get valid indices and values
-    valid_indices = np.where(~na_mask)[0]
-    valid_values = str_series.iloc[valid_indices]
+    valid_indices: np.ndarray = np.where(~na_mask)[0]
+    valid_values = cast("pd.Series", str_series.iloc[valid_indices])
 
-    # Process valid values
+    if dtype == _FLOAT64_DTYPE:
+        return _parse_series_float64(series, valid_indices, valid_values, detector)
+
+    return _parse_series_preserve(series, valid_indices, valid_values, detector)
+
+
+def _select_detection_sample(valid_values: pd.Series, sample_size: int) -> pd.Series:
+    """Select deterministic, evenly distributed values for detector training."""
+    if len(valid_values) <= sample_size:
+        return valid_values
+
+    sample_indices = np.linspace(0, len(valid_values) - 1, sample_size, dtype=int)
+    sample_indices = np.unique(sample_indices)
+    sample = valid_values.iloc[sample_indices]
+    return cast("pd.Series", sample)
+
+
+def _parse_series_float64(
+    series: pd.Series,
+    valid_indices: np.ndarray,
+    valid_values: pd.Series,
+    detector: LocaleDetector,
+) -> pd.Series:
+    """Parse valid values into a backwards-compatible float64 Series."""
+    result_values: np.ndarray = np.full(len(series), np.nan, dtype=np.float64)
     if len(valid_values) > 0:
-        # Use vectorized approach where possible
         parsed_values = _vectorized_parse(valid_values, detector)
         result_values[valid_indices] = parsed_values
 
-    # Create result series with original index and name
     return pd.Series(
         result_values, index=series.index, name=series.name, dtype=np.float64
     )
+
+
+def _parse_series_preserve(
+    series: pd.Series,
+    valid_indices: np.ndarray,
+    valid_values: pd.Series,
+    detector: LocaleDetector,
+) -> pd.Series:
+    """Parse valid values while preserving parse_number return values."""
+    result_values: np.ndarray = np.full(len(series), pd.NA, dtype=object)
+    if len(valid_values) > 0:
+        parsed_values = _vectorized_parse_preserve(valid_values, detector)
+        result_values[valid_indices] = parsed_values
+
+    return pd.Series(result_values, index=series.index, name=series.name, dtype=object)
 
 
 def _vectorized_parse(str_series: pd.Series, detector: LocaleDetector) -> np.ndarray:
@@ -184,12 +223,32 @@ def _vectorized_parse(str_series: pd.Series, detector: LocaleDetector) -> np.nda
         try:
             result = parse_number(value, detector)
             # Convert int results to float for consistency
-            return float(result)
-        except (ValueError, TypeError):
+            float_result = float(result)
+            return float_result if np.isfinite(float_result) else float("nan")
+        except (OverflowError, ValueError, TypeError):
             return float("nan")
 
     # Use pandas apply which is vectorized internally and faster than Python loops
     result = str_series.apply(safe_parse)
     # Convert to numpy array with explicit float64 dtype
     array_result: np.ndarray = np.array(result.values, dtype=np.float64)
+    return array_result
+
+
+def _vectorized_parse_preserve(
+    str_series: pd.Series, detector: LocaleDetector
+) -> np.ndarray:
+    """Vectorized parsing that preserves parse_number return values."""
+    _check_pandas_available()
+
+    def safe_parse(value: str) -> object:
+        """Safely parse a single value, returning pd.NA on error."""
+        try:
+            return parse_number(value, detector)
+        except (ValueError, TypeError):
+            return pd.NA
+
+    array_result: np.ndarray = np.array(
+        [safe_parse(value) for value in str_series], dtype=object
+    )
     return array_result
